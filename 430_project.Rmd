@@ -1,0 +1,93 @@
+---
+title: "430_project"
+output: html_document
+---
+
+## FRE 490 Spatial Data Analysis and Remote Sensing
+
+##### Instructor: Jonathan Proctor
+
+##### Teaching Assistant: Bhavita Ragoo
+
+### Final Project workflow
+
+-   This project entails: 7-minute presentation,
+-   written analysis documenting the project and the results (5-pages double spaced text plus figures, brief intro/research question/methods section/results
+
+### Objectives:
+
+In this project, I will design a research question and then conduct the analysis and write up the results. Initial questions:
+
+1)  How does air quality vary across different land use types in the lower Mekong region?
+
+2)  Does air quality disproportionately impact vulnerable/ high population density areas?
+
+#### *Refined question:* 
+
+*To what extent do seasonal fire hotspots (MODIS/VIIRS) correlate with specific land use types in Cambodia?*
+
+*What are the demographic profiles of the populations most frequently exposed to these events? What is the proximity to areas with high human development index?*
+
+side quest: What are the implications of air quality and downwind potentially vulnerable communities?
+
+#### Hypothesis
+
+Areas with higher fire density occurs in agricultural land use types and in transitional areas (proximate to cropland and forested areas). Increased fire activity occurs in areas with high human footprint index.
+
+### Datasets
+
+1)  Active fire points: NASA VIIRS (375m resolution): 2012-present; thermal anomalies [link](https://firms.modaps.eosdis.nasa.gov/map/)
+
+2)  Land use: Regional land cover monitoring system (RLCMS) by SERVIR-SEA (30m resolution) (up to 2023) [link](https://landcovermapping.org/en/about/)
+
+3)  Cambodian spatial distribution of population and age and gender structures from WorldPop (100m) (2015-2020) [link](https://data.humdata.org/organization/worldpop?groups=khm&q=&ext_page_size=25)
+
+4)  Cambodia administrative boundaries: Latest data recevied 2024 [link](https://data.humdata.org/dataset/cod-ab-khm)
+
+5)  Human footprint index: relative human influence in each terrestial biome (%); updated to 2025; 1 km resolution created from human population density, human land use and infrastructure (built up areas, nighttime lights, land use/land cover), human access; least influence - 0%, most influenced - 100%; WCS/Columbia University [link](https://hub.arcgis.com/maps/65518e782be04e7db31de65d53d591a9/about)
+
+6)  OpenAQ: ground validation for air pollution detected from local devices [link](https://explore.openaq.org/#3.63/12.44/99.08)
+
+7)  Poverty and vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
+
+### Setup
+
+Install and load necessary packages:
+
+```{r}
+rm(list = ls())
+library(maps)
+library(raster)
+library(ggplot2)
+library(ggthemes)
+library(stargazer)
+library(pracma)
+library(lfe) 
+library(sf)
+library(raster) 
+library(dplyr)
+library(scales)
+
+setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
+```
+
+## Estimating the high fire intensity areas and land use
+
+Standardize the data sets to the same coordinate system: WGS 84 / UTM zone 48N (EPSG:32648)
+
+Temporal window: Fire season from January 1st to April 30th for years: 2015 to 2025
+
+```{r}
+#focus on a specific folder with the dataset
+file_list <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_dl-03.01_viirs", 
+                        pattern = "\\.shp$", 
+                        full.names = TRUE)
+# Read in all the files at one time using lapply
+lapply(file_list, function(x) names(st_read(x, quiet = TRUE)))
+# read the files in as sf objects
+sf_list <- lapply(file_list, read_sf)
+
+
+
+
+```
