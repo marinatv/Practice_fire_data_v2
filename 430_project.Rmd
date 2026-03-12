@@ -230,8 +230,11 @@ prov_fire_stats <- fires_in_prov %>%
 
 print(prov_fire_stats)
 
+#change the province column name
 provinces <- provinces %>%
   rename(province_name = adm1_name)
 
-write.csv(prov_fire_stats, "Cambodia_Provincial_Fire_Stats_2019_2025.csv", row.names = FALSE)
+# save the processed data file to the project folder
+write.csv(prov_fire_stats, 
+          file = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_Fire_Stats.csv", row.names = FALSE)
 ```

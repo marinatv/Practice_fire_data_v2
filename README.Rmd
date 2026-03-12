@@ -23,6 +23,10 @@ This repository contains R scripts for practicing geospatial data analysis and c
 
 ### Documents include:
 
+#### 430_project.Rmd
+
+Working notebook with data analysis for the 430 final project
+
 #### Progress_update.Rmd
 
 This .rmd contains R code and output for practicing geospatial data analysis and creating the poster for the WDCAG 2026 and trial maps from field data.
@@ -81,14 +85,14 @@ This R script uses libraries sf, raster, dplyr, ggplot2, scales, rnaturalearth, 
 
 ```{r, message=FALSE, warning=FALSE}
 # Run the script to showcase the feature maps
-source("poster-map.R")
+#source("poster-map.R")
 
 # Field site with raster of the field and site points
-p1 # note that the raster should be flipped 180 degrees 
+#p1 # note that the raster should be flipped 180 degrees 
 
 
 # Poster map with inset map for the whole region
-final_map2
+#final_map2
 
 
 ```

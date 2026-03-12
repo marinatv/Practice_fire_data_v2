@@ -1,42 +1,144 @@
 
-# Geospatial Analysis: Practicing with NASA FIRMS and GFED Data
+# Geospatial Analysis: Practice
 
 **Author:** Marina
 
-**Date:** 2026-02-04
+**Date:** 2026-03-11
 
 ## Project Overview
 
 This repository contains R scripts for practicing geospatial data
-analysis. I focus on:
-
-- Retrieving and processing **NASA FIRMS** (MODIS) fire data.
-- Analyzing spatial distributions of **FRP** (Fire Radiative Power).
-- Mapping fire data coordinates using `ggplot2`, `sf`, `raster`.
-- Analyzing temporal distributions across sites.
-
-## Key Analysis
-
-### Using sf package
-
-I use the `sf` package to handle spatial geometries and filter for
-high-intensity fire events based on the FRP metric.
+analysis and creating the poster for the WDCAG 2026.
 
 ## Repository Structure
 
-- scripts/: R scripts for data processing.
+- scripts/: R scripts for data processing. See above for files details.
 
 - .gitignore: Configured to exclude large geospatial datasets (.shp,
   .nc, .hdf).
 
 - README.md: Automatically generated report (Edit README.Rmd).
 
-## Tools Used
+### Documents include:
+
+#### 430_project.Rmd
+
+Working notebook with data analysis for the 430 final project
+
+#### Progress_update.Rmd
+
+This .rmd contains R code and output for practicing geospatial data
+analysis and creating the poster for the WDCAG 2026 and trial maps from
+field data.
+
+#### 0119_practice.R
+
+This R script file includes:retrieving and processing **NASA FIRMS**
+(MODIS) fire data and analyzing spatial distributions of **FRP** (Fire
+Radiative Power). It includes three plots focused on Thailand:
+
+- f1: Fire detection comparison: MODIS vs. VIIRS (2001-2026)
+
+- f2: Comparison across years (MODIS Only)
+
+- f3:Thailand Wildfire Detections (2025)
+
+  *Note that these datasets took a long time to process and require more
+  precision in the time series*
+
+#### readGFED.R
+
+This R script file uses libraries raster, rdhdf5 and ggplot2 and begins
+processing GFED4 datasets. Figure for Thailand included:
+
+- gg: GFED4.1s Emissions 2025
+
+#### poster-map.R
+
+This R script uses libraries sf, raster, dplyr, ggplot2, scales,
+rnaturalearth, rnaturalearthdata, ggspatial, patchwork and terra. In
+this file, I read in a raster tiff and .gpkg files that represent the
+Cambodia field site.
+
+- p1: Field Sites: Cambodia (2024)
+
+- p2: Project sites: Camdodia
+
+  - *draft slightly zoomed out and in progress*
+
+- site plot: Field Sites: Siem Reap Province, Cambodia
+
+  - *zoomed out to the broader region of Cambodia and using a different
+    base layer*
+
+- p3: Project sites: Cambodia
+
+  - *draft version with boundaries for the provinces*
+
+- p4: Focus: Siem Reap Province, Cambodia
+
+  - *draft version that aims to highlights the province*
+
+- map1: Study site in Cambodia
+
+  - *final map that highlights the province and includes hydrological
+    features and capital*
+
+- inset_map: Southeast Asia
+
+  - *draft regional map of Southeast Asia with labels and highlight*
+
+- final_map2: Study site in Cambodia
+
+  - *map1 with inset map for context of the region. This is used for the
+    poster*
+
+``` r
+# Run the script to showcase the feature maps
+#source("poster-map.R")
+
+# Field site with raster of the field and site points
+#p1 # note that the raster should be flipped 180 degrees 
+
+
+# Poster map with inset map for the whole region
+#final_map2
+```
+
+## Key Analysis
+
+### Core mapping and data
+
+- sf: Using this package to handle “simple features” for spatial data so
+  that they can be managed like data frames
+
+- rnaturalearth: provides basic access to public domain map data from
+  Natural Earth
+
+- ggplot2: Foundational plotting system used to layer map data, points
+  and labels
+
+### Layout and customisation
+
+- patchwork: enables simple assembly of multiple plots so that the inset
+  map can be added to the main map
+
+- cowplot: tool to arrange plots into grids and manually draw elements
+
+- dplyr: essential for cleaning and filter data especially for isolating
+  specific sites from a region
+
+## Datasets
+
+- FIRMS/MODIS - 2025 for Thailand
+
+- VIIRS - 2025 for Thailand
+
+## Primary tools Used
 
 - R / RStudio
 
-- sf: For Simple Features spatial data.
+- Library packages: sf, ggplot2, dplyr, cowplot, rnaturalearth,
+  patchwork, terra
 
-- ggplot2: For data visualization.
-
-- Git: For version control.
+- Git: For version control
