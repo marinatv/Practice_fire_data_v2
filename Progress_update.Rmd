@@ -1,0 +1,273 @@
+---
+title: "Progress_update"
+output: html_document
+---
+
+# Geospatial Analysis: Practice
+
+**Author:** Marina
+
+**Date:** `r Sys.Date()`
+
+## .Rmd Overview
+
+This .rmd contains R code and output for practicing geospatial data analysis and creating the poster for the WDCAG 2026 and trial maps from field data.
+
+### Loading libraries
+
+```{r}
+library(sf)
+library(raster); library(dplyr); library(ggplot2); library(scales)
+library(terra)
+# set working directory to where the fire data is saved 
+setwd("C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/cambodia_field_sites")
+savanna_plots <- st_read("savanna_plots.gpkg")
+forest_plots <- st_read("forest_plots.gpkg")
+kr_2024_rgb <- rast("kr_2024_rgb.tif")
+
+```
+
+### Plotting the field data for field sites in Cambodia 
+
+*note that the raster should be flipped 180 degrees*
+
+```{r}
+
+# using base terra to plot the data 
+plotRGB(kr_2024_rgb, r=1, g=2, b=3, stretch="lin")
+plot(st_geometry(savanna_plots), add=TRUE, col="orange", pch=16)
+plot(st_geometry(forest_plots), add=TRUE, col="darkgreen", pch=16)
+
+
+```
+
+### Transforming the data to map it on ggplot
+
+```{r}
+## Prep the data to plot it in ggplot
+# define a single, shared CRS object
+target_crs <- st_crs(32648) # UTM Zone 48
+
+# make sure that the sf points are using the same crs
+savanna_plots <- st_transform(savanna_plots, target_crs)
+forest_plots <- st_transform(forest_plots, target_crs)
+
+# Align the raster to the plots
+all_plots <- rbind(savanna_plots, forest_plots) # Use original to avoid double-transforming
+st_crs(all_plots) <- "EPSG:32648" 
+
+# Force the raster to match the plot extent (Georeferencing)
+plot_extent <- ext(all_plots) + 500
+ext(kr_2024_rgb) <- plot_extent
+crs(kr_2024_rgb) <- st_crs(all_plots)$wkt
+
+# align the areas to the crop region
+# Crop to the actual area of interest to keep the data frame small
+kr_cropped <- crop(kr_2024_rgb, plot_extent)
+kr_rescaled <- stretch(kr_cropped, minv = 0, maxv = 1)
+
+# Convert to data frame for ggplot
+kr_df <- as.data.frame(kr_rescaled, xy = TRUE, na.rm = TRUE)
+colnames(kr_df)[3:5] <- c("R", "G", "B")
+
+# ggplot
+p1 <- ggplot() +
+  geom_raster(data = kr_df, aes(x = x, y = y, fill = rgb(R, G, B))) +
+  scale_fill_identity() +
+  geom_sf(data = savanna_plots, fill = "orange", shape = 21, size = 3, color = "white") +
+  geom_sf(data = forest_plots, fill = "darkgreen", shape = 21, size = 3, color = "white") +
+  theme_minimal() +
+  labs(title = "Field Sites: Cambodia (2024)",
+       subtitle = "CRS: UTM Zone 48N")
+
+p1
+```
+
+Enhance map
+
+```{r}
+library(ggspatial)
+
+# Create the regional map
+p2 <- ggplot() +
+  # 1. Add a regional basemap (zooms out automatically)
+  #annotation_map_tile(type = "osm", zoom = 10) + 
+  
+  # 2. Add your high-res raster (it will appear as a small patch)
+  geom_raster(data = kr_df, aes(x = x, y = y, fill = rgb(R, G, B))) +
+  scale_fill_identity() +
+  
+  # 3. Add your points
+  geom_sf(data = savanna_plots, fill = "orange", shape = 21, size = 2) +
+  geom_sf(data = forest_plots, fill = "darkgreen", shape = 21, size = 2) +
+  # 4. Set the view to a larger area (e.g., Cambodia)
+  # Adjust these coordinates to zoom out
+  coord_sf(xlim = c(min(kr_df$x) - 100, max(kr_df$x) + 100),
+                    ylim = c(min(kr_df$y) - 100, max(kr_df$y) + 100),
+                    crs = st_crs(32648)) + 
+  labs(title = "Field Sites: Cambodia (2024)",
+       subtitle = "CRS: UTM Zone 48N")+
+  theme_minimal()
+
+
+p2
+
+
+```
+
+### Create a regional map
+
+```{r}
+# Trying a new method to zoom out of the site and look at the other provinces 
+library(rnaturalearth)
+library(ggspatial)
+
+# Get the Cambodia border
+cambodia <- ne_countries(scale = "medium", country = "cambodia", returnclass = "sf") %>%
+  st_transform(32648)
+
+# Plot with a Minimalist Type
+p3 <- ggplot() +
+  # Use a light, minimal basemap style
+  annotation_map_tile(type = "cartolight", zoom = 7) + 
+  
+  # Draw the country outline
+  geom_sf(data = cambodia, fill = NA, color = "black", size = 0.5) +
+  
+  # Add your sites (scaled up slightly so they are visible)
+  geom_sf(data = savanna_plots, fill = "orange", shape = 21, size = 3, color = "white") +
+  geom_sf(data = forest_plots, fill = "darkgreen", shape = 21, size = 3, color = "white") +
+  
+  # Minimal Compass and Scale
+  annotation_north_arrow(location = "br", which_north = "true", 
+                         style = north_arrow_minimal()) +
+  annotation_scale(location = "bl", style = "ticks") +
+  
+  # Clean up the theme
+  theme_void() +
+  theme(panel.background = element_rect(fill = "white", color = NA)) +
+  labs(title = "Project Sites: Cambodia")
+
+p3
+
+# using a different base layer to zoom out of the field site and look at the broader region
+
+#provinces <- ne_states(country = "cambodia", returnclass = "sf") %>%
+#st_transform(32648)
+# isolate the specific province from the dataset so that it can be highlighted
+#siem_reap <- provinces %>% filter(name == "Siemreab")
+
+site_plot <- ggplot() +
+  # Background Tiles (Minimal Carto Light)
+  annotation_map_tile(type = "cartolight", 
+                      zoom = 9) + 
+   #targeted province
+#  geom_sf(data = siem_reap, 
+#          fill = NA, 
+#          color = "black", 
+#          size = 0.8) +
+
+  # Field Sites with LEGEND mapping
+  # Note: fill is moved inside aes() to create the legend
+  geom_sf(data = savanna_plots, 
+          aes(fill = "Savanna"), 
+          shape = 21, 
+          size = 2, 
+          color = "white") +
+  geom_sf(data = forest_plots, 
+          aes(fill = "Forest"), 
+          shape = 21, 
+          size = 2, 
+          color = "white") +
+  # Define Legend Colors and Title
+  scale_fill_manual(values = c("Savanna" = "orange", 
+                               "Forest" = "darkgreen"), 
+                    name = "Site Plot Type") +
+coord_sf(xlim = c(103.25, 105.0), 
+           ylim = c(12.91, 14.28),
+           crs = st_crs(4326), # Using standard Lat/Lon for the zoom
+           expand = FALSE)+
+  theme_light(base_size = 14) + 
+  theme(legend.position = "bottom", 
+        plot.title = element_text(hjust = 0.25)) +
+  labs(title = "Field Sites: Siem Reap Province, Cambodia")
+
+site_plot
+
+```
+
+### Map for the poster
+
+```{r}
+
+## making a simple map with rnaturalearth
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# add Cambodia's provincial boundaries
+# returnclass = "sf" is critical for ggplot Compatibility
+cambodia <- ne_states(country = "cambodia", returnclass = "sf")
+
+# Download Lakes (Polygons)
+lakes <- ne_download(scale = 50, 
+                     type = "lakes", 
+                     category = "physical", 
+                     returnclass = "sf")
+
+# Download Rivers (Lines)
+rivers <- ne_download(scale = 50, 
+                      type = "rivers_lake_centerlines", 
+                      category = "physical", 
+                      returnclass = "sf")
+# add the capital city to the map
+capital_data <- data.frame(
+  city = "Phnom Penh",
+  lat = 11.5564, 
+  lon = 104.9282
+)
+# make an sf object 
+capital_sf <- st_as_sf(capital_data, coords = c("lon", "lat"), crs = 4326)
+
+
+# create a country map with field site and province
+map1 <- ggplot(data = cambodia) +
+  geom_sf(fill = "#a6dba0", 
+          color = "grey25") +
+  # Layer 2: Rivers (Blue lines)
+  geom_sf(data = rivers, 
+          color = "dodgerblue", 
+          linewidth = 0.5) +
+  # Layer 3: Lakes (Blue polygons)
+  geom_sf(data = lakes, 
+          fill = "dodgerblue", 
+          color = "dodgerblue") +
+  geom_sf(data = subset(cambodia, 
+                        name_en == "Siem Reap"), 
+          fill = "#7b3294", 
+          alpha = 0.75, 
+          color = "black") +
+  geom_sf(data = savanna_plots, 
+          pch = 4, 
+          size = 2) +
+  annotate("text", 
+           x = 104.1, 
+           y = 13.5, 
+           label = "Siem Reap", 
+           color = "black", 
+           fontface = "bold", 
+           size = 3) +
+  geom_sf(data = capital_sf, color = "black", size = 3, shape = 18) +
+  geom_sf_text(data = capital_sf, aes(label = city), nudge_y = 0.2, fontface = "bold", size = 2.5) +
+  # CRITICAL: Zoom into Cambodia coordinates
+  coord_sf(xlim = c(102, 108), 
+           ylim = c(10, 15)) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    axis.text = element_text(size = 8)
+  ) + labs(x = "Longitude", y = "Latitude")+
+  labs(title = "Study site in Cambodia", subtitle = "Potential field site in Siem Reap Province")
+map1
+
+```

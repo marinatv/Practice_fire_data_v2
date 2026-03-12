@@ -23,6 +23,10 @@ This repository contains R scripts for practicing geospatial data analysis and c
 
 ### Documents include:
 
+#### Progress_update.Rmd
+
+This .rmd contains R code and output for practicing geospatial data analysis and creating the poster for the WDCAG 2026 and trial maps from field data.
+
 #### 0119_practice.R
 
 This R script file includes:retrieving and processing **NASA FIRMS** (MODIS) fire data and analyzing spatial distributions of **FRP** (Fire Radiative Power). It includes three plots focused on Thailand:

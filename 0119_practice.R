@@ -9,11 +9,16 @@ library(raster); library(dplyr); library(ggplot2); library(scales)
 setwd("C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder")
 firms_modis_25 <- st_read("FIRMS_2026-01-19/fire_nrt_M-C61_706801.shp")
 viirs_25 <- st_read("FIRMS_2026-01-19/fire_archive_SV-C2_706804.shp")
-
+#standardize the column names
+names(firms_modis_25) <- toupper(names(firms_modis_25))
+names(viirs_25) <- toupper(names(viirs_25))
+# Standardize to lowercase before binding
+st_geometry(firms_modis_25) <- "geometry"
+st_geometry(viirs_25) <- "geometry"
 # Point to a subfolder
-file_list <- list.files(path = "C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/FIRMS_2026-01-19", 
-                        pattern = "\\.shp$", 
-                        full.names = TRUE)
+#file_list <- list.files(path = "C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/FIRMS_2026-01-19", 
+#                        pattern = "\\.shp$", 
+#                        full.names = TRUE)
 
 # check the column names for all the related files
 # lapply(file_list, function(x) names(st_read(x, quiet = TRUE)))
@@ -21,42 +26,25 @@ file_list <- list.files(path = "C:/Users/marin/Documents/1. Liu Lab/Practice_dat
 # Define the exact columns you want to keep
 keep_cols <- c("ACQ_DATE", "FRP", "SATELLITE", "INSTRUMENT", "GEOMETRY")
 
-# read and Compile
-# all_fires <- do.call(rbind, lapply(file_list, function(x) {
-#  temp_sf <- st_read(x, quiet = TRUE)
-  # Ensure column names match your 'keep_cols' casing
-  # NASA data can vary, so forcing to uppercase is a safe bet
-#  names(temp_sf) <- toupper(names(temp_sf))
-#  st_geometry(temp_sf) <- "GEOMETRY"
-  # Select only the specific columns
-# return(temp_sf[, keep_cols])
-#}))
-#check the files combined correctly 
-#summary(all_fires)
+#apply the keep columns for standardising the columns for the two datasets
+firms_modis_sub <- firms_modis_25[, keep_cols]
+viirs_25_sub <- viirs_25[, keep_cols]
 
+#combine them
+all_fires <- rbind(firms_modis_25, viirs_25)
 # create a date object 
-all_fires$ACQ_DATE <- as.Date(all_fires$ACQ_DATE)
+firms_modis_sub$ACQ_DATE <- as.Date(all_fires$ACQ_DATE)
 
 # create a year column 
-all_fires$YEAR <- as.numeric(format(all_fires$ACQ_DATE, "%Y"))
-
-fire_counts <- as.data.frame(table(all_fires$YEAR))
-colnames(fire_counts) <- c("Year", "Count")
-
-# Save as a compressed R object
-saveRDS(all_fires, "C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/all_fires_compiled.rds")
-
-# To load the dataset for next session
-all_fires <- readRDS("C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/all_fires_compiled.rds")
+firms_modis_sub$YEAR <- as.numeric(format(all_fires$ACQ_DATE, "%Y"))
 
 # line plot of fire frequency with all the data 
-ggplot(fire_counts, aes(x = as.numeric(as.character(Year)), y = Count)) +
-  geom_line(color = "red", size = 1) +
-  geom_point() +
-  labs(title = "Annual Fire Detections (2001 - 2025)",
-       x = "Year",
-       y = "Total Number of Detections") +
-  theme_minimal()
+ggplot(data = firms_modis_sub) +
+  geom_sf(aes(color = FRP), alpha = 0.5) +
+  scale_color_viridis_c(option = "inferno") +
+  theme_minimal() +
+  labs(title = "Fire Radiative Power (FRP) Locations",
+       subtitle = "Combined MODIS and VIIRS data")
 
 ## Given that the line plot above does not inform much
 # create a plot that separates the VIIRS and MODIS satellites

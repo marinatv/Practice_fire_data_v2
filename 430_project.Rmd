@@ -16,13 +16,13 @@ output: html_document
 
 ### Objectives:
 
-In this project, I will design a research question and then conduct the analysis and write up the results. Initial questions:
+In this project, I will design a research question and then conduct the analysis and write up the results. Initial questions (based on proposal):
 
 1)  How does air quality vary across different land use types in the lower Mekong region?
 
 2)  Does air quality disproportionately impact vulnerable/ high population density areas?
 
-#### *Refined question:* 
+#### *Refined question:*
 
 *To what extent do seasonal fire hotspots (MODIS/VIIRS) correlate with specific land use types in Cambodia?*
 
@@ -38,19 +38,50 @@ Areas with higher fire density occurs in agricultural land use types and in tran
 
 1)  Active fire points: NASA VIIRS (375m resolution): 2012-present; thermal anomalies [link](https://firms.modaps.eosdis.nasa.gov/map/)
 
-2)  Land use: Regional land cover monitoring system (RLCMS) by SERVIR-SEA (30m resolution) (up to 2023) [link](https://landcovermapping.org/en/about/)
+    1)  FIRMS -\> GEE: <https://code.earthengine.google.com/?scriptPath=Examples%3ADatasets%2FFIRMS%2FFIRMS>
+
+    2)  Considering using Burned area with MODIS -\> GEE: <https://code.earthengine.google.com/?scriptPath=Examples%3ADatasets%2FMODIS%2FMODIS_061_MCD64A1>
+
+2)  Land use: Regional land cover monitoring system (RLCMS) by SERVIR-SEA (30m resolution) (2012 to 2023) [link](https://landcovermapping.org/en/about/) (Saah et al 2020)
+
+    1)  GEE: <https://code.earthengine.google.com/ddc999619aa0c29514cccfc673a4f7e1>
 
 3)  Cambodian spatial distribution of population and age and gender structures from WorldPop (100m) (2015-2020) [link](https://data.humdata.org/organization/worldpop?groups=khm&q=&ext_page_size=25)
 
-4)  Cambodia administrative boundaries: Latest data recevied 2024 [link](https://data.humdata.org/dataset/cod-ab-khm)
+    1)  Estimated population GEE: <https://code.earthengine.google.com/25af8a8783b214b89b8f5bef55e1be80>
 
-5)  Human footprint index: relative human influence in each terrestial biome (%); updated to 2025; 1 km resolution created from human population density, human land use and infrastructure (built up areas, nighttime lights, land use/land cover), human access; least influence - 0%, most influenced - 100%; WCS/Columbia University [link](https://hub.arcgis.com/maps/65518e782be04e7db31de65d53d591a9/about)
+4)  Cambodia administrative boundaries: Latest data received 2024 [link](https://data.humdata.org/dataset/cod-ab-khm)
+
+    1)  Natural protected areas 1993-2023: [link](https://data.opendevelopmentmekong.net/en/dataset/protectedareas) national park, wildlife sanctuary, protected landscape, multiple use, natural heritage site, Ramsar site, biosphere reserve, marine national park
+
+5)  Human footprint index: relative human influence in each terrestrial biome (%); updated to 2025; 1 km resolution created from human population density, human land use and infrastructure (built up areas, nighttime lights, land use/land cover), human access; least influence - 0%, most influenced - 100%; WCS/Columbia University [link](https://hub.arcgis.com/maps/65518e782be04e7db31de65d53d591a9/about)
+
+    1)  GEE: (Kennedy et al., 2019) <https://code.earthengine.google.com/80e4e1006b6ec26ece0975766adc57b1>
 
 6)  OpenAQ: ground validation for air pollution detected from local devices [link](https://explore.openaq.org/#3.63/12.44/99.08)
 
 7)  Poverty and vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
 
-### Setup
+### Analysis
+
+Fire hotspot density per commune
+
+land cover/ use % per commune
+
+correlation
+
+raster::overlay with population density and human footprint index –\> regression analysis
+
+1.  Cross sectional modeling
+2.  cross validation regression
+3.  moving window regression
+4.  panel modeling
+
+### Future Work
+
+This preliminary analysis aims to incorporate on-the-ground data validation and novel insights on land use, hidden social-ecological values, and human-interaction and landscape dynamics with an emphasis on fire use and livelihoods. This data collection will use the [LiteFarm](https://r9-kdd3.math.ubc.ca/home/) application.
+
+## Setup
 
 Install and load necessary packages:
 
@@ -62,32 +93,145 @@ library(ggplot2)
 library(ggthemes)
 library(stargazer)
 library(pracma)
-library(lfe) 
+library(cowplot)
 library(sf)
 library(raster) 
 library(dplyr)
 library(scales)
+library(tidyverse)
+library(lubridate) 
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
 
-## Estimating the high fire intensity areas and land use
+## Estimating the high fire activity 
 
 Standardize the data sets to the same coordinate system: WGS 84 / UTM zone 48N (EPSG:32648)
 
-Temporal window: Fire season from January 1st to April 30th for years: 2015 to 2025
+Temporal window: Fire season from January 1st to April 30th for years: 2019 to 2025 using VIIRS
 
 ```{r}
 #focus on a specific folder with the dataset
-file_list <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_dl-03.01_viirs", 
+file_list_fires <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_dl-03.01_viirs", 
                         pattern = "\\.shp$", 
                         full.names = TRUE)
 # Read in all the files at one time using lapply
-lapply(file_list, function(x) names(st_read(x, quiet = TRUE)))
+lapply(file_list_fires, function(x) names(st_read(x, quiet = TRUE)))
 # read the files in as sf objects
-sf_list <- lapply(file_list, read_sf)
+sf_list <- lapply(file_list_fires, read_sf)
+# combine all the years (2018 April - 2026 Jan) into one dataframe
+all_fires <- bind_rows(sf_list)
 
 
+# filter the dataframe for the fire season of Jan-April
+all_fires <- all_fires %>%
+  mutate(ACQ_DATE = as.Date(ACQ_DATE), # Convert character/factor to Date
+         Month = month(ACQ_DATE),     # Extract month as a number (1-12)
+         Year = year(ACQ_DATE))  # Extract year as a number) %>%
+
+# create variable filtered for only fire season 
+all_fires_jan_apr <- all_fires %>%
+  filter(Year != 2018 & Year != 2026) %>%
+  filter(Month >= 1 & Month <= 4) 
+
+fire_season_counts <- all_fires_jan_apr %>%
+  mutate(Year = year(ACQ_DATE)) %>%
+  group_by(Year) %>%
+  summarize(season_fires = n())
+
+head(fire_season_counts)
+
+#plot the fires for each year
+ggplot() +
+geom_sf(data = all_fires_jan_apr, aes(color = BRIGHT_T31), 
+        size = 0.5, alpha = 0.7) +
+  # grid by year
+  facet_wrap(~ Year, ncol = 4) +  
+  scale_color_viridis_c(option = "inferno", name = "BRIGHTNESS") +
+  theme_void() +
+  labs(title = "VIIRS Fire Hotspots in Cambodia (Jan-Apr)",
+       caption = "Source: FIRMS VIIRS 375m") +
+  coord_sf() # Ensures the map isn't stretched
+```
+
+### Administrative boundaries layer: provinces and communes
+
+```{r}
+
+# using the latest data for administrative boundaries - there are three levels - province, district, commune
+
+file_list_admin <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_admin", 
+                        pattern = "\\.shp$", 
+                        full.names = TRUE)
+# Read in all the files at one time using lapply
+lapply(file_list_admin, function(x) names(st_read(x, quiet = TRUE)))
+# read the files in as sf objects
+sf_list_admin <- lapply(file_list_admin, read_sf)
+# rename each file for the specific administrative boundary
+country <- sf_list_admin[[1]]
+provinces <- sf_list_admin[[2]]
+districts <- sf_list_admin[[3]]
+communes  <- sf_list_admin[[4]]
+# simple plot for the provinces
+ggplot()+
+  geom_sf(data = provinces, fill = "gray95", color = "black") +
+  theme_void() +
+  labs(title = "Provinces of Cambodia")
+# plot the communes
+ggplot()+
+  geom_sf(data = communes, fill = "gray95", color = "black") +
+  theme_void() +
+  labs(title = "Communes of Cambodia")
+# count communes per province
+commune_per_province <- communes %>%
+  st_drop_geometry() %>%
+  group_by(adm1_name) %>%
+  summarise(num_communes = n()) %>%
+  arrange(desc(num_communes))
+
+print(commune_per_province)
 
 
+```
+
+### Analyze the data for fire activity per province 
+
+-   Hotspot count: measuring frequency
+
+-   mean FRP: identifying high intensity fires vs. smaller fires
+
+-   Fire density: hotspots per km2: normalizes the data across land area
+
+```{r}
+# confirm that the datasets are using the same CRS
+if (st_crs(all_fires_jan_apr) != st_crs(provinces)) {
+  warning("CRS mismatch detected! Reprojecting fires to match provinces...")
+  all_fires_jan_apr <- st_transform(all_fires_jan_apr, st_crs(provinces))
+} else {
+  message("CRS is in alignment!")
+}
+#repair administrative boundaries to ensure no overlapping boundaries
+provinces <- st_make_valid(provinces)
+# spatial join to ensure that each fire point is attributed to a province where it is located
+fires_in_prov <- st_join(all_fires_jan_apr, provinces)
+
+# aggregate by year and province 
+# calculate total count, mean FRP, and fire density
+prov_fire_stats <- fires_in_prov %>%
+  st_drop_geometry() %>%    # Dropping geometry makes the calculation 100x faster
+  group_by(Year, adm1_name, area_sqkm) %>% 
+  summarize(
+    total_hotspots = n(),
+    avg_frp = mean(FRP, na.rm = TRUE),
+    max_frp = max(FRP, na.rm = TRUE),
+    .groups = "drop") %>%
+  mutate(density = total_hotspots / area_sqkm) %>%
+  arrange(Year, desc(total_hotspots))
+
+print(prov_fire_stats)
+
+provinces <- provinces %>%
+  rename(province_name = adm1_name)
+
+write.csv(prov_fire_stats, "Cambodia_Provincial_Fire_Stats_2019_2025.csv", row.names = FALSE)
 ```
