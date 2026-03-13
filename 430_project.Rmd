@@ -79,7 +79,7 @@ raster::overlay with population density and human footprint index –\> regressi
 
 ### Future Work
 
-This preliminary analysis aims to incorporate on-the-ground data validation and novel insights on land use, hidden social-ecological values, and human-interaction and landscape dynamics with an emphasis on fire use and livelihoods. This data collection will use the [LiteFarm](https://r9-kdd3.math.ubc.ca/home/) application.
+This preliminary analysis aims to incorporate on-the-ground data validation and novel insights on land use, hidden social-ecological values, and human-interaction landscape dynamics with an emphasis on fire use and livelihoods. This data collection will use the [LiteFarm](https://r9-kdd3.math.ubc.ca/home/) application.
 
 ## Setup
 
@@ -87,24 +87,24 @@ Install and load necessary packages:
 
 ```{r}
 rm(list = ls())
-library(maps)
-library(raster)
-library(ggplot2)
-library(ggthemes)
-library(stargazer)
-library(pracma)
-library(cowplot)
-library(sf)
-library(raster) 
-library(dplyr)
-library(scales)
-library(tidyverse)
-library(lubridate) 
+library(raster) # handle raster data
+library(ggplot2) #data visulations
+library(ggthemes) #enhance data vis
+library(stargazer) # regression outputs
+library(cowplot) # putting plots together
+library(sf) # handling vector operations - spatial features
+library(dplyr) # data wrangling
+library(scales) #graphical scales for vis
+library(tidyr) # data wrangling
+library(lubridate) #parsing dates
+library(terra) #handle raster data (faster)
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
 
-## Estimating the high fire activity 
+## Preliminary Analysis
+
+### Fire activity
 
 Standardize the data sets to the same coordinate system: WGS 84 / UTM zone 48N (EPSG:32648)
 
@@ -140,7 +140,9 @@ fire_season_counts <- all_fires_jan_apr %>%
   summarize(season_fires = n())
 
 head(fire_season_counts)
+```
 
+```{r}
 #plot the fires for each year
 ggplot() +
 geom_sf(data = all_fires_jan_apr, aes(color = BRIGHT_T31), 
@@ -154,7 +156,7 @@ geom_sf(data = all_fires_jan_apr, aes(color = BRIGHT_T31),
   coord_sf() # Ensures the map isn't stretched
 ```
 
-### Administrative boundaries layer: provinces and communes
+### Admin boundaries layer: provinces and communes
 
 ```{r}
 
@@ -194,7 +196,7 @@ print(commune_per_province)
 
 ```
 
-### Analyze the data for fire activity per province 
+### Provincial analysis: fire activity
 
 -   Hotspot count: measuring frequency
 
@@ -228,13 +230,225 @@ prov_fire_stats <- fires_in_prov %>%
   mutate(density = total_hotspots / area_sqkm) %>%
   arrange(Year, desc(total_hotspots))
 
-print(prov_fire_stats)
-
 #change the province column name
-provinces <- provinces %>%
-  rename(province_name = adm1_name)
+#prov_fire_stats %>%
+#  rename(province_name = adm1_name)
 
+print(prov_fire_stats)
 # save the processed data file to the project folder
 write.csv(prov_fire_stats, 
           file = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Cambodia_Fire_Stats.csv", row.names = FALSE)
+
+
+# create a summary table for tensity per year for each province
+wide_density <- prov_fire_stats %>%
+  select("adm1_name", "Year", "density") %>%
+  pivot_wider(names_from = Year,
+              values_from = density,
+              names_prefix = "Density_", 
+              )
+print(wide_density)
+```
+
+Visualise the fire statistics for provinces
+
+*note that hotspot data has not filtered out any low FRP, minimal brightness or for confidence level*
+
+```{r}
+#create bar chart for fire density 
+ggplot(prov_fire_stats %>% filter(Year == 2024) %>% drop_na(), 
+       aes(x = reorder(adm1_name, density), y = density)) +
+  geom_col(fill = "#ca0020") +
+  coord_flip() + # Makes province names much easier to read
+  theme_minimal() +
+  labs(title = "Fire density by province (2024)",
+       subtitle = "Fires per square kilometer",
+       x = "Province",
+       y = "Density (Fires/km2)")
+
+# a Line graph for trends over time for the top 5 provinces 
+
+top_provinces <- prov_fire_stats %>%
+  group_by(adm1_name) %>%
+  summarize(total = sum(total_hotspots)) %>%
+  top_n(5, total) %>%
+  pull(adm1_name)
+
+ggplot(prov_fire_stats %>% 
+         filter(adm1_name %in% 
+                  top_provinces), 
+       aes(x = Year, 
+           y = total_hotspots, 
+           color = adm1_name)) +
+  geom_line(size = 1) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Fire trends in the top five provinces in Cambodia",
+       y = "Total Hotspot Count",
+       color = "Province")
+
+# heatmap
+ggplot(prov_fire_stats %>% drop_na(density), 
+       aes(x = factor(Year), 
+           y = adm1_name, 
+           fill = density)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "virdis", name = "Density") +
+  theme_minimal() +
+  labs(title = "Fire intensity by province (2019-2025)",
+       subtitle = "Density in hotspots per square km",
+       x = "Year",
+       y = "Province")
+
+```
+
+Calculate proportion of uncertainty to see if there if low confidence hotspots may skew the data
+
+Low (l) confidence daytime fire pixels are typically associated with areas of Sun glint and lower relative temperature anomaly (\<15 K) in the mid-infrared channel I4 (NASA)
+
+```{r}
+
+# Calculate the proportion of confidence levels per province
+uncertainty_stats <- fires_in_prov %>%
+  st_drop_geometry() %>%
+  group_by(adm1_name, CONFIDENCE, Year) %>%
+  summarize(count = n(), .groups = "drop_last") %>%
+  mutate(percent = (count / sum(count)) * 100)
+
+# View provinces with the highest percentage of 'low' confidence fires
+uncertainty_stats %>% 
+  filter(CONFIDENCE == "l") %>% 
+  arrange(desc(percent))
+
+ggplot(uncertainty_stats %>% drop_na(), 
+       aes(x = factor(Year), 
+           y = adm1_name, 
+           fill = percent)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "virdis", name = "percent") +
+  theme_minimal() +
+  labs(title = "Proportion of low confidence hotspots by province (2019-2025)",
+       x = "Year",
+       y = "Province")
+
+```
+
+Create a choropleth map
+
+```{r}
+# left join the original provinces (admin boundaries dataset) with the fire stats dataset 
+#remove any provinces with no fire hotspots
+ch_map_data <- provinces %>%
+  left_join(prov_fire_stats, by = "adm1_name") %>%
+  mutate(density = if_else(is.na(density), 0, density))
+
+#plot the map
+ggplot(ch_map_data) +
+  geom_sf(aes(fill = density), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "inferno", 
+                       na.value = "grey90", 
+                       name = "Fires/km²") +
+  facet_wrap(~Year, ncol = 4) +
+  theme_void() +
+  labs(title = "Fire intensity in Cambodia (2019-2025)", 
+       caption = "NASA FIRMS: VIIRS")
+
+```
+
+### Land use raster data
+
+Note that lulc data is only for 2012-2023 and fire data is only for 2019-2025
+
+```{r}
+#create a list for where all the raster files are in my folder
+raster_files_lulc <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/GEE_rasters/Cambodia_LULC_Project",
+                                pattern = "\\.tif$",
+                                full.names = TRUE)
+#read them all in as a raster stack 
+lulc_stack <- rast(raster_files_lulc)
+
+#rename the files 
+names(lulc_stack) <- c("LULC_2012","LULC_2013","LULC_2014","LULC_2015","LULC_2016","LULC_2017","LULC_2018", "LULC_2019", "LULC_2020", "LULC_2021", "LULC_2022", "LULC_2023")
+
+print(lulc_stack)
+
+# Check the Coordinate Reference System (CRS)
+if (crs(lulc_stack) != crs(provinces)) {
+  provinces <- st_transform(provinces, crs(lulc_stack))
+}
+
+```
+
+### Analyse the fire and land use statistics (2019-2023)
+
+```{r}
+# filter the fire datasets to only include years 2019-2023
+fires_lu_stats <- all_fires_jan_apr %>%
+  filter(Year >= 2019 & Year <= 2023)
+# filter the lulc stack
+overlap_years <- c("LULC_2019", "LULC_2020", "LULC_2021", "LULC_2022", "LULC_2023")
+lulc_subset <- lulc_stack[[overlap_years]]
+
+# check that CRS is the same
+fires_lu_stats <- st_transform(fires_lu_stats, crs(lulc_subset))
+
+# extract values from all layers
+extract_values <- terra::extract(lulc_subset, vect(fires_lu_stats))
+
+# create a new variable for land use; using a loop to assign each fire for each year what type of land use it occured on
+fires_lu_stats$land_use_code <- sapply(
+  1:nrow(fires_lu_stats), 
+  function(i) {
+  col_name <- paste0("LULC_", 
+                     fires_lu_stats$Year[i])
+  return(extract_values[i, 
+                        col_name])
+})
+
+# associate the code with the lulc
+fires_lu_stats <- fires_lu_stats %>%
+  mutate(land_use_name = case_when(
+    land_use_code == 1 ~ "Aquaculture",
+    land_use_code == 2 ~ "Barren",
+    land_use_code == 3 ~ "Cropland",
+    land_use_code == 4 ~ "Crop Plantation",
+    land_use_code == 5 ~ "Deciduous Forest",
+    land_use_code == 6 ~ "Evergreen Forest",
+    land_use_code == 7 ~ "Flooded Forest",
+    land_use_code == 8 ~ "Forest Plantation",
+    land_use_code == 9 ~ "Grassland",
+    land_use_code == 10 ~ "Mangrove",
+    land_use_code == 11 ~ "Other Forest",
+    land_use_code == 12 ~ "Palm",
+    land_use_code == 13 ~ "Rice",
+    land_use_code == 14 ~ "Rubber",
+    land_use_code == 15 ~ "Shrub",
+    land_use_code == 16 ~ "Urban",
+    land_use_code == 17 ~ "Water",
+    land_use_code == 18 ~ "Wetland",
+    land_use_code == 19 ~ "Sugarcane",
+    land_use_code == 20 ~ "Cassava",
+    land_use_code == 21 ~ "Snow",
+    land_use_code == 22 ~ "Other",
+    TRUE ~ "Unknown"
+  ))
+
+head(fires_lu_stats)
+```
+
+Add Raster for human modification and population
+
+```{r}
+#create a list for where all the raster files are in my folder
+raster_files_pop <- list.files(path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/GEE_rasters/Cambodia_pop",
+                                pattern = "\\.tif$",
+                                full.names = TRUE)
+#read them all in as a raster stack 
+Pop_stack <- rast(raster_files_pop)
+
+#rename the files 
+names(Pop_stack) <- c("HM_2016","Pop_count")
+
+print(Pop_stack)
+
 ```

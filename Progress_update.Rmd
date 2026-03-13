@@ -9,6 +9,18 @@ output: html_document
 
 **Date:** `r Sys.Date()`
 
+## Key Updates
+
+-   Proposed date for spring review: 29 April morning
+
+-   430 final project presentations: 4/7 or 4/9 (write up due 4/16)
+
+-   Working with LiteFarm developers to translate app using CrowdIn
+
+    -   contracting translators for Khmer
+
+    -   sketching out potential preliminary concept for exp design
+
 ## .Rmd Overview
 
 This .rmd contains R code and output for practicing geospatial data analysis and creating the poster for the WDCAG 2026 and trial maps from field data.
@@ -21,13 +33,14 @@ library(raster); library(dplyr); library(ggplot2); library(scales)
 library(terra)
 # set working directory to where the fire data is saved 
 setwd("C:/Users/marin/Documents/1. Liu Lab/Practice_data_folder/cambodia_field_sites")
+#load in datasets using sf package
 savanna_plots <- st_read("savanna_plots.gpkg")
 forest_plots <- st_read("forest_plots.gpkg")
 kr_2024_rgb <- rast("kr_2024_rgb.tif")
 
 ```
 
-### Plotting the field data for field sites in Cambodia 
+### Plotting the field data for field sites in Cambodia
 
 *note that the raster should be flipped 180 degrees*
 
@@ -269,5 +282,57 @@ map1 <- ggplot(data = cambodia) +
   ) + labs(x = "Longitude", y = "Latitude")+
   labs(title = "Study site in Cambodia", subtitle = "Potential field site in Siem Reap Province")
 map1
+
+```
+
+creating the Southeast Asia regional map
+
+```{r}
+
+sea_neighbors <- sea %>% filter(admin != "Cambodia")
+cambodia_main <- ne_countries(country = "cambodia", returnclass = "sf", scale = "medium")
+
+# calculate the center of the countries for placing 
+# This creates X and Y columns for every country in your 'sea' object
+neighbor_labels <- sea_neighbors %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  as.data.frame() %>%
+  mutate(name = sea_neighbors$name)
+
+# 3. Create the Plot
+inset_map2 <- ggplot() +
+  # Draw neighbors in purple (no overlap now!)
+  geom_sf(data = sea_neighbors, fill = "#c2a5cf", color = "#f7f7f7") +
+  
+  # Draw Cambodia in solid green (no alpha needed since there's no purple under it)
+  geom_sf(data = cambodia_main, fill = "#a6dba0", color = "black") + 
+  
+  # AUTOMATED TEXT: Uses the coordinates we calculated
+  geom_text(data = neighbor_labels, aes(x = X, y = Y, label = name), 
+            size = 2.5, fontface = "bold", check_overlap = TRUE) +
+  
+  coord_sf(xlim = c(95, 115), ylim = c(5, 25)) + 
+  theme_void() + 
+  theme(panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Southeast Asia", size = 2.75)
+
+inset_map2
+
+
+# draft final map with inset map
+final_map2 <- map1 + 
+  inset_element(
+    inset_map, 
+    left = 0.6,   # Horizontal start (0 to 1)
+    bottom = 0.05, # Vertical start
+    right = 0.99,  # Horizontal end
+    top = 0.4,     # Vertical end
+    align_to = 'panel',
+    clip = FALSE   # Keeps the border from being cut off
+  )
+
+# View the result
+final_map2
 
 ```
