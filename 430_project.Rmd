@@ -1,6 +1,11 @@
 ---
 title: "430_project"
-output: html_document
+author: "Marina Tornorsam"
+output: 
+  html_document:
+    toc: true
+  github_document: 
+    toc: true
 ---
 
 ## FRE 490 Spatial Data Analysis and Remote Sensing
@@ -266,26 +271,28 @@ ggplot(prov_fire_stats %>% filter(Year == 2024) %>% drop_na(),
        x = "Province",
        y = "Density (Fires/km2)")
 
-# a Line graph for trends over time for the top 5 provinces 
-
+# a bar chart for trends over time for the top 5 provinces 
+#filter for the top provinces with number of hotspots 
 top_provinces <- prov_fire_stats %>%
   group_by(adm1_name) %>%
   summarize(total = sum(total_hotspots)) %>%
   top_n(5, total) %>%
   pull(adm1_name)
 
+#plot the bar chart
 ggplot(prov_fire_stats %>% 
          filter(adm1_name %in% 
                   top_provinces), 
-       aes(x = Year, 
+       aes(x = adm1_name, 
            y = total_hotspots, 
-           color = adm1_name)) +
-  geom_line(size = 1) +
-  geom_point() +
+           fill = factor(Year))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Set3") +
   theme_minimal() +
   labs(title = "Fire trends in the top five provinces in Cambodia",
+       x = "Province",
        y = "Total Hotspot Count",
-       color = "Province")
+       fill = "Year")
 
 # heatmap
 ggplot(prov_fire_stats %>% drop_na(density), 
@@ -434,6 +441,42 @@ fires_lu_stats <- fires_lu_stats %>%
   ))
 
 head(fires_lu_stats)
+
+# spatial join to add the province to each fire incidence
+#check the crs
+fires_lu_stats <- st_transform(fires_lu_stats,st_crs(provinces))
+
+#join the fire points to the provinces location
+fires_lu_stats <- st_join(fires_lu_stats, 
+                          provinces %>% 
+                            select(adm1_name))
+#check 
+head(fires_lu_stats$adm1_name)
+
+# calculate lulc statistics with fire stats 
+# specifically looking at grassland, deciduous forest, cropland
+
+frp_comparison <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  filter(land_use_name %in% c("Grassland", "Deciduous Forest", "Cropland")) %>%
+  group_by(land_use_name) %>%
+  summarize(
+      avg_frp = mean(FRP, na.rm = TRUE),
+      median_frp = median(FRP, na.rm = TRUE),
+      max_frp = max(FRP, na.rm = TRUE),
+      total_fires = n()
+    )
+  
+print(frp_comparison)
+
+land_use_hotspots <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  filter(land_use_name == "Evergreen Forest") %>% 
+  group_by(adm1_name) %>%
+  summarize(total_fires = n()) %>%
+  arrange(desc(total_fires))
+
+print(head(land_use_hotspots, 10))
 ```
 
 Add Raster for human modification and population
