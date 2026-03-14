@@ -63,15 +63,29 @@ Areas with higher fire density occurs in agricultural land use types and in tran
 
     1)  GEE: (Kennedy et al., 2019) <https://code.earthengine.google.com/80e4e1006b6ec26ece0975766adc57b1>
 
-6)  OpenAQ: ground validation for air pollution detected from local devices [link](https://explore.openaq.org/#3.63/12.44/99.08)
+Optional/ potential datasets:
 
-7)  Poverty and vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
+1)  OpenAQ: ground validation for air pollution detected from local devices [link](https://explore.openaq.org/#3.63/12.44/99.08)
+
+2)  Poverty and vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
+
+3)  CHIRPS Precipitation daily [link](https://code.earthengine.google.com/?scriptPath=Examples%3ADatasets%2FUCSB-CHG%2FUCSB-CHG_CHIRPS_DAILY)
+
+    Climate hazards center infrared precipitation with station data. 30+ years; 0.5 degree resolution satellite imagery; 1981-2026
+
+4)  ERA5 daily aggregates - combines model data with observations across the world;
 
 ### Analysis
 
 Fire hotspot density per commune
 
 land cover/ use % per commune
+
+rasterize the fire hot spot data into one pixel –\> converts individual points into a grid –\> pixel to pixel comparison
+
+calculate the maximum FRP by sum daily 1 km –\> proxy for fire intensity –\> compare to fire counts for burned area
+
+Characterizing the temporal progression of agricultural fires (see Liu et al 2021)
 
 correlation
 

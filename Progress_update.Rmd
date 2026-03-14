@@ -1,6 +1,10 @@
 ---
 title: "Progress_update"
-output: html_document
+output: 
+  html_document:
+    toc: true
+  github_document: 
+    toc: true
 ---
 
 # Geospatial Analysis: Practice
@@ -20,6 +24,8 @@ output: html_document
     -   contracting translators for Khmer
 
     -   sketching out potential preliminary concept for exp design
+
+    -   ask about the typical frequency of data input \*\*
 
 ## .Rmd Overview
 
