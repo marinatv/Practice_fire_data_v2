@@ -29,17 +29,17 @@ In this project, I will design a research question and then conduct the analysis
 
 #### *Refined question:*
 
-1.  *To what extent do seasonal fire hotspots (MODIS/VIIRS) correlate with specific land use types in Cambodia?*
-    1.  *Has the fire season shifted temporally or spatially within the last five years?*
-    2.  *Are there any apparent trends in high FRP in specific land use types within the fire season?*
-    3.  *Is there any relation to high fire years with El Nino cycles?*
-2.  *To what extend is the influence of human interaction influenced fire incidence and occurrence?*
-    1.  *What is the correlation of high fire intensity provinces and communes with human footprint index?*
-    2.  *Is there a correlation with the high fire intensity provinces and protected areas?*
+1.  *To what extent do seasonal fire hotspots (VIIRS) correlate with specific land use types in Cambodia?*
+    1.  *What is the spatial and temporal distribution of fire hotspots across land use types in Cambodia (2019–2025)?*
+    2.  *Has the timing and intensity of the fire season shifted over the period, and is this shift associated with climate variability (ENSO/precipitation anomalies)?*
+    3.  *Are fire hotspots disproportionately concentrated in edge/transitional zones between forest and agricultural land use types?*
+2.  *To what extent is there influence from human interaction on fire incidence and occurrence?*
+    1.  *Are provinces and communes with higher human footprint index associated with greater fire frequency and intensity?*
+    2.  *Does fire incidence differ significantly inside versus outside protected areas, and does this vary by land use type?*
 
-side quest: What are the implications of air quality and downwind potentially vulnerable communities?
+side quest: What are the implications of air quality and downwind potentially vulnerable communities? Which populated areas are at an elevated exposure risk from fire smoke based on prevailing wind direction and proximity to high-FRP fire clusters (based on 2025?)
 
-#### Hypothesis
+### Hypothesis
 
 Areas with higher fire density occurs in agricultural land use types and in transitional areas (proximate to cropland and forested areas). Increased fire activity occurs in areas with high human footprint index.
 
@@ -100,6 +100,12 @@ raster::overlay with population density and human footprint index –\> regressi
 3.  moving window regression
 4.  panel modeling
 
+### Limitations
+
+Resolutions of datasets
+
+Land cover land use datasets are only up to date from SERVIR to 2023, thus, I applied 2023 LULC to fire data from 2024, 2025
+
 ### Future Work
 
 This preliminary analysis aims to incorporate on-the-ground data validation and novel insights on land use, hidden social-ecological values, and human-interaction landscape dynamics with an emphasis on fire use and livelihoods. This data collection will use the [LiteFarm](https://r9-kdd3.math.ubc.ca/home/) application.
@@ -121,6 +127,7 @@ library(scales) #graphical scales for vis
 library(tidyr) # data wrangling
 library(lubridate) #parsing dates
 library(terra) #handle raster data (faster)
+library(nngeo) # k-nearest neighbor join for spatial data 
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
@@ -728,6 +735,11 @@ terra::res(lulc_subset)
 ```
 
 Analysis for pixel to pixel comparison
+
+```{r}
+
+
+```
 
 Add Raster for human modification and population
 
