@@ -41,6 +41,10 @@ side quest: What are the implications of air quality and downwind potentially vu
 
 ### Hypothesis
 
+Fire hotspot density and intensity in Cambodia are disproportionately concentrated in agricultural and forest-agricultural transition land use types (like savanna and shrubland) with the fire season showing a detectable temporal shift for start date and end date. Fire desnity and intensity are positively associated with human footprint index at the province level suggesting that anthropogenic land management is a primary driver of fire incidence and spatial distribution.
+
+Null hypothesis: Fire hotspot density and intensity shows no significant association with land use type, human footprint index, and protected areas indicating that the fire incidence is driven by natural climate variability.
+
 Areas with higher fire density occurs in agricultural land use types and in transitional areas (proximate to cropland and forested areas). Increased fire activity occurs in areas with high human footprint index.
 
 ### Datasets
@@ -71,21 +75,19 @@ Optional/ potential datasets:
 
 1)  OpenAQ: ground validation for air pollution detected from local devices [link](https://explore.openaq.org/#3.63/12.44/99.08)
 
-2)  Poverty and vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
+2)  Poverty CHand vulnerability map for Cambodia: AI-calculated using dimensions that include education, health, living standard, employment, monetary; launched in 2024 [link](https://cambodiapovertymapping.sig-gis.com/en/home/)
 
 3)  CHIRPS Precipitation daily [link](https://code.earthengine.google.com/?scriptPath=Examples%3ADatasets%2FUCSB-CHG%2FUCSB-CHG_CHIRPS_DAILY)
 
     Climate hazards center infrared precipitation with station data. 30+ years; 0.5 degree resolution satellite imagery; 1981-2026
 
-4)  ERA5 daily aggregates - combines model data with observations across the world;
+4)  ERA5 daily aggregates - combines model data with observations across the world; Copernicus Climate Change Service; air temperature, dewpoint temperature, total precipitation, mean sea level pressure, surface pressure, u-component of wind and v-component of wind
 
 ### Analysis
 
 Fire hotspot density per commune
 
-land cover/ use % per commune
-
-rasterize the fire hot spot data into one pixel –\> converts individual points into a grid –\> pixel to pixel comparison
+land cover/ use % per communerasterize the fire hot spot data into one pixel –\> converts individual points into a grid –\> pixel to pixel comparison
 
 calculate the maximum FRP by sum daily 1 km –\> proxy for fire intensity –\> compare to fire counts for burned area
 
@@ -128,6 +130,8 @@ library(tidyr) # data wrangling
 library(lubridate) #parsing dates
 library(terra) #handle raster data (faster)
 library(nngeo) # k-nearest neighbor join for spatial data 
+library(patchwork) # combine plots into one exportable image
+library(stringr) # simple, consistent wrappers for common string operations
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
@@ -371,15 +375,17 @@ Create a choropleth map
 
 ```{r}
 # left join the original provinces (admin boundaries dataset) with the fire stats dataset 
+# Use density
 #remove any provinces with no fire hotspots
 ch_map_data <- provinces %>%
   left_join(prov_fire_stats, by = "adm1_name") %>%
   mutate(density = if_else(is.na(density), 0, density))
 
 #plot the map
-ggplot(ch_map_data) +
+ch_density <- ggplot(ch_map_data) +
   geom_sf(aes(fill = density), color = "white", size = 0.1) +
-  scale_fill_viridis_c(option = "inferno", 
+  scale_fill_distiller(palette = "YlOrRd",
+                       trans = "reverse",
                        na.value = "grey90", 
                        name = "Fires/km²") +
   facet_wrap(~Year, ncol = 4) +
@@ -387,6 +393,26 @@ ggplot(ch_map_data) +
   labs(title = "Fire density in Cambodia (2019-2025)", 
        caption = "NASA FIRMS: VIIRS")
 
+# use the max FRP 
+#remove any provinces with no fire hotspots
+ch_map_data_frp <- provinces %>%
+  left_join(prov_fire_stats, by = "adm1_name") %>%
+  mutate(max_frp = if_else(is.na(max_frp), 0, max_frp))
+
+#plot the map
+ch_frp <- ggplot(ch_map_data_frp) +
+  geom_sf(aes(fill = max_frp), color = "white", size = 0.1) +
+  scale_fill_distiller(palette = "YlOrRd",
+                       trans = "reverse",
+                       na.value = "grey90", 
+                       name = "Max FRP") +
+  facet_wrap(~Year, ncol = 4) +
+  theme_void() +
+  labs(title = "Fire intensity in Cambodia (2019-2025)", 
+       caption = "NASA FIRMS: VIIRS")
+
+print(ch_density)
+print(ch_frp)
 ```
 
 ### Land use raster data
@@ -410,11 +436,23 @@ print(lulc_stack)
 if (crs(lulc_stack) != crs(provinces)) {
   provinces <- st_transform(provinces, crs(lulc_stack))
 }
-plot(lulc_stack[[1]])
-plot(lulc_stack[[10]])
+plot(lulc_stack[[1]]) #2012
+plot(st_geometry(provinces), 
+     add = TRUE,          
+     border = "black",    # Color of the province lines
+     lwd = 1) 
+plot(lulc_stack[[10]]) #2023
+plot(st_geometry(provinces), 
+     add = TRUE,          
+     border = "black",    # Color of the province lines
+     lwd = 1)             # Line width
 ```
 
 ### Analyse the fire and land use statistics (2019-2023)
+
+using the fire point data, I assigned each fire point to the specific land use code
+
+Visualized the total number of fires per lulc
 
 ```{r}
 # filter the fire datasets to only include years 2019-2023
@@ -578,6 +616,8 @@ print(p_landuse_summary)
 
 ## create a summary for each year and plot it in a bar chart to compare fires per landu use type 
 # Loop through each year
+years <- 2019:2023
+
 for (yr in years) {
   # Summarize for this year
   land_use_summary_yr <- fires_lu_stats %>%
@@ -607,7 +647,7 @@ for (yr in years) {
     scale_fill_viridis_d(option = "inferno", begin = 0.1, end = 0.9) +
     coord_flip() +
     labs(
-      title    = "Total Fire Hotspots by Land Use Type",
+      title    = "Total Fire Hotspots by Land Use Type (Count)",
       subtitle = paste("Cambodia", yr),
       x        = NULL,
       y        = "Number of Hotspots"
@@ -626,18 +666,236 @@ for (yr in years) {
 #         width = 10, height = 6, dpi = 150)
 ```
 
+#### Temporal fire season shift via fire points 
+
+-   reindex the year to start from july to june so that the fire season can be considered starting in Dec or earlier
+
+-   only look at the top 3 provinces with mean annual max FRP
+
+```{r}
+# calculate the top 3 provinces with max frp across the 7 years
+# top3_provinces <- fires_lu_stats %>%
+#   st_drop_geometry() %>%
+#   group_by(adm1_name) %>%
+#   summarize(max_frp = max(FRP, na.rm = TRUE), .groups = "drop") %>%
+#   slice_max(max_frp, n = 3) %>%
+#   pull(adm1_name)
+# 
+# print(top3_provinces)
+
+#calculate the top 6 provinces with mean of annual max FRP
+top3_provinces <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  mutate(
+    date      = as.Date(ACQ_DATE),
+    month     = month(date),
+    fire_year = ifelse(month >= 7, Year + 1, Year)
+  ) %>%
+  group_by(adm1_name, fire_year) %>%
+  summarize(annual_max_frp = max(FRP, na.rm = TRUE),
+            .groups = "drop") %>%
+  group_by(adm1_name) %>%
+  summarize(mean_annual_max = mean(annual_max_frp, na.rm = TRUE),
+            .groups = "drop") %>%
+  slice_max(mean_annual_max, n = 3) %>%
+  pull(adm1_name)
+
+print(top3_provinces)
+
+# Aggregate max FRP by province, year, month
+monthly_province <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  filter(adm1_name %in% top3_provinces) %>%
+  mutate(
+    date      = as.Date(ACQ_DATE),
+    month     = month(date),
+    fire_year = ifelse(month >= 7, Year + 1, Year)
+  ) %>%
+  group_by(adm1_name, fire_year, month) %>%
+  summarize(max_frp = max(FRP, na.rm = TRUE), .groups = "drop")
+
+# Aggregate max FRP by province, year, month, day
+daily_province <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  filter(adm1_name %in% top3_provinces) %>%
+  mutate(
+    date      = as.Date(ACQ_DATE),
+    doy       = yday(date),
+    month     = month(date),
+    fire_year = ifelse(month >= 7, Year + 1, Year)
+  ) %>%
+  group_by(adm1_name, fire_year, doy) %>%
+  summarize(max_frp = max(FRP, na.rm = TRUE), .groups = "drop")
+
+# Line chart — monthly FRP per year per province
+p_monthly_top3 <- ggplot(monthly_province, aes(
+  x = month,
+  y = max_frp,
+  colour = factor(fire_year)
+)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  scale_colour_viridis_d(option = "inferno",
+                         begin = 0.1,
+                         end = 0.9) +
+  facet_wrap( ~ adm1_name, ncol = 1, scales = "free_y") +
+  labs(
+    title    = "Monthly fire intensity — top 3 provinces",
+    x        = NULL,
+    y = "Max FRP (MW)",
+    colour = "fire_year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+# Line chart — daily FRP per year per province
+p_daily_top3 <- ggplot(daily_province, aes(
+  x = doy,
+  y = max_frp,
+  colour = factor(fire_year)
+)) +
+  geom_line(linewidth = 0.6, alpha = 0.8) +
+  scale_x_continuous(
+    breaks = c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335),
+    labels = month.abb
+  ) +
+  scale_colour_viridis_d(option = "inferno",
+                         begin = 0.1,
+                         end = 0.9) +
+  facet_wrap( ~ adm1_name, ncol = 2, scales = "free_y") +
+  labs(
+    title = "Daily fire intensity — top 3 provinces",
+    x = NULL,
+    y = "Max FRP (MW)",
+    colour = "fire_year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+print(p_monthly_top3)
+print(p_daily_top3)
+
+# Function to calculate fire season breakpoints using Zhang et al. (2014) method
+# Inputs:
+#   daily_frp_vec: vector of daily max FRP values (ordered by day)
+#   days: corresponding vector of day-of-year values
+# Returns: list of k_start (beta=0.1), k_mid (beta=0.5), k_end (beta=0.9)
+fire_season_breakpoints <- function(daily_frp_vec, days) {
+  
+  # Step 1: Calculate cumulative sum of FRP across the year
+  cum_frp <- cumsum(daily_frp_vec)
+  
+  # Step 2: Normalise by total annual FRP (y_n in Zhang et al.)
+  # This gives proportion of total fire energy released up to each day
+  norm_frp <- cum_frp / sum(daily_frp_vec, na.rm = TRUE)
+  
+  # Step 3: Find k_beta — first day where normalised cumulative FRP exceeds threshold
+  # beta = 0.1 -> season start (10% of total FRP released)
+  # beta = 0.5 -> season midpoint (50% of total FRP released)
+  # beta = 0.9 -> season end (90% of total FRP released)
+  k_start <- days[min(which((norm_frp - 0.1) > 0))]
+  k_mid   <- days[min(which((norm_frp - 0.5) > 0))]
+  k_end   <- days[min(which((norm_frp - 0.9) > 0))]
+  
+  return(list(k_start = k_start, k_mid = k_mid, k_end = k_end))
+}
+
+# Apply breakpoint function to each province-year combination
+# daily_province must be sorted by doy within each group
+season_breakpoints <- daily_province %>%
+  group_by(adm1_name, fire_year) %>%
+  arrange(doy) %>%
+  summarize(
+    # Extract each breakpoint from the function output
+    k_start = fire_season_breakpoints(max_frp, doy)$k_start,
+    k_mid   = fire_season_breakpoints(max_frp, doy)$k_mid,
+    k_end   = fire_season_breakpoints(max_frp, doy)$k_end,
+    .groups = "drop"
+  )
+
+print(season_breakpoints)
+
+# Reshape to long format for plotting all three metrics together
+season_long <- season_breakpoints %>%
+  pivot_longer(cols      = c(k_start, k_mid, k_end),
+               names_to  = "metric",
+               values_to = "doy") %>%
+  # Rename for readable legend labels
+  mutate(metric = recode(metric,
+                         k_start = "Start (β=0.1)",
+                         k_mid   = "Midpoint (β=0.5)",
+                         k_end   = "End (β=0.9)"))
+
+# Plot: track how start, midpoint, and end of fire season shift year to year
+p_breakpoints <- ggplot(season_long,
+                        aes(x = fire_year, y = doy, colour = metric)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.5) +
+  # Convert doy y-axis to month labels for readability
+  scale_y_continuous(breaks = c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335),
+                     labels = month.abb) +
+  scale_x_continuous(breaks = 2019:2025) +
+  scale_colour_manual(values = c("#f4a261", "#e76f51", "#264653")) +
+  # Facet by province to compare top 6 side by side
+  facet_wrap(~ adm1_name, ncol = 2) +
+  labs(title    = "Fire season timing",
+       subtitle = "Start (β=0.1), midpoint (β=0.5), end (β=0.9) of cumulative FRP",
+       x        = "Year",
+       y        = "Day of year",
+       colour   = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+print(p_breakpoints)
+
+# table for the fire season start, mid, end dates based on the cumulative daily FRP 
+season_breakpoints %>%
+  mutate(across(c(k_start, k_mid, k_end), ~ format(as.Date(
+    . - 1, origin = paste0(fire_year, "-01-01")
+  ), "%b %d"))) %>%
+  kable(
+    col.names = c("Province", "fire_year", "Start", "Midpoint", "End"),
+    caption = "Fire season breakpoints"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  collapse_rows(columns = 1)
+
+
+season_regression <- season_long %>%
+  group_by(adm1_name, metric) %>%
+  do(tidy(lm(doy ~ fire_year, data = .))) %>%
+  filter(term == "fire_year") %>%
+  select(adm1_name, metric, estimate, std.error, p.value) %>%
+  mutate(
+    direction = ifelse(estimate > 0, "Later", "Earlier"),
+    sig       = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    )
+  ) %>%
+  arrange(metric, p.value)
+
+print(season_regression)
+```
+
 ### Conduct pixel to pixel comparison
 
 Rasterize by fire frequency and intensity using the count and FRP
 
 ```{r}
 #create a raster template for rasterizing the fire hotspot data
-raster_template <- aggregate(lulc_stack[[1]], fact = 10, fun = "modal")
-
-# Define where to save the outputs
+# raster_template <- aggregate(lulc_stack[[1]], fact = 10, fun = "modal")
+# 
+# # Define where to save the outputs
 output_dir <- "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Fire_Rasters/"
-
-if(!dir.exists(output_dir)) dir.create(output_dir)
+# 
+# if(!dir.exists(output_dir)) dir.create(output_dir)
 
 # # Start the Loop
 # years_to_process <- 2019:2025
@@ -666,28 +924,343 @@ if(!dir.exists(output_dir)) dir.create(output_dir)
 # 
 # message("Finished! All years saved to your folder.")
 # 
-# # List only the count files
-# count_files <- list.files(output_dir, 
-#                           pattern = "Fire_Count_.*\\.tif$", 
-#                           full.names = TRUE)
-# 
-# # Create the stack
-# fire_count_stack <- rast(count_files)
-# 
-# # List only the FRP files
-# frp_files <- list.files(output_dir, 
-#                         pattern = "Fire_FRP_.*\\.tif$", 
-#                         full.names = TRUE)
-# 
-# # Create the stack
-# fire_frp_stack <- rast(frp_files)
+# List only the count files
+count_files <- list.files(output_dir,
+                          pattern = "Fire_Count_.*\\.tif$",
+                          full.names = TRUE)
 
-# Check dimensions and layer counts
-print(fire_count_stack)
-print(fire_frp_stack)
+# Create the stack
+fire_count_stack <- rast(count_files)
+
+# List only the FRP files
+frp_files <- list.files(output_dir,
+                        pattern = "Fire_FRP_.*\\.tif$",
+                        full.names = TRUE)
+
+# Create the stack
+fire_frp_stack <- rast(frp_files)
+
+# # Check dimensions and layer counts
+# print(fire_count_stack)
+# print(fire_frp_stack)
+
+names(fire_count_stack) <- paste0("fire_count_", 2019:2025)
+names(fire_frp_stack)   <- paste0("fire_frp_",   2019:2025)
+
+# names(fire_count_stack)
+# nlyr(fire_count_stack)
+
+# check alignment for crs and resolution
+crs(fire_count_stack)
+crs(lulc_stack)
+res(fire_count_stack)   # your fire raster: 300m
+res(lulc_stack)         # LULC: ~30m
+
+# becuase the LULC rasters are 30m 
+# Use method="near" for categorical LULC data
+lulc_300m <- resample(lulc_stack, fire_count_stack, method = "near")
+
+# Verify alignment
+compareGeom(fire_count_stack, lulc_300m)  # should return TRUE
+
+# Zonal statistics — fire count and FRP per LULC type per year:
+zonal_results <- list()
+
+for (yr in 2019:2023) {
+  lulc_year     <- ifelse(yr > 2023, 2023, yr)
+  lulc_yr       <- lulc_300m[[paste0("LULC_", yr)]]
+  fire_count_yr <- fire_count_stack[[paste0("fire_count_", yr)]]
+  fire_frp_yr   <- fire_frp_stack[[paste0("fire_frp_", yr)]]
+
+  # Zonal stats for count and FRP
+  z_count <- zonal(fire_count_yr, lulc_yr, fun = "sum",  na.rm = TRUE) 
+  # to calculate the annual average
+  z_frp   <- zonal(fire_frp_yr, lulc_yr, fun = "max", na.rm = TRUE)
+
+  zonal_results[[as.character(yr)]] <- tibble(
+    land_use_code = z_count[[1]],
+    total_fires   = z_count[[2]],
+    max_frp      = z_frp[[2]],
+    Year          = yr
+  )
+}
+
+# Combine and add land use names:
+zonal_df <- bind_rows(zonal_results) %>%
+  mutate(land_use_name = case_when(
+    land_use_code == 1  ~ "Aquaculture",
+    land_use_code == 2  ~ "Barren",
+    land_use_code == 3  ~ "Cropland",
+    land_use_code == 4  ~ "Crop Plantation",
+    land_use_code == 5  ~ "Deciduous Forest",
+    land_use_code == 6  ~ "Evergreen Forest",
+    land_use_code == 7  ~ "Flooded Forest",
+    land_use_code == 8  ~ "Forest Plantation",
+    land_use_code == 9  ~ "Grassland",
+    land_use_code == 10 ~ "Mangrove",
+    land_use_code == 11 ~ "Other Forest",
+    land_use_code == 12 ~ "Palm",
+    land_use_code == 13 ~ "Rice",
+    land_use_code == 14 ~ "Rubber",
+    land_use_code == 15 ~ "Shrub",
+    land_use_code == 16 ~ "Urban",
+    land_use_code == 17 ~ "Water",
+    land_use_code == 18 ~ "Wetland",
+    land_use_code == 19 ~ "Sugarcane",
+    land_use_code == 20 ~ "Cassava",
+    TRUE ~ "Unknown"
+  ))
+
+print(zonal_df)
+
+# Define target land uses as top 5-6 by avg frp
+target_land_uses_frp <- zonal_df %>%
+  group_by(land_use_name) %>%
+  summarize(max_frp = mean(max_frp, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(max_frp, n = 6) %>%
+  pull(land_use_name)
+
+# Define target land uses as top 5-6 by avg fire count
+target_land_uses_count <- zonal_df %>%
+  group_by(land_use_name) %>%
+  summarize(total_fires = mean(total_fires, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_fires, n = 6) %>%
+  pull(land_use_name)
+
+print(target_land_uses_count)
+print(target_land_uses_frp)
+
+# visualize zonal df with top land uses with highest mean FRP
+heatmap_data_frp <- zonal_df %>%
+  filter(land_use_name %in% target_land_uses_frp)
+
+# visualize zonal df with top land uses with avg annual count
+heatmap_data_count <- zonal_df %>% 
+  filter(land_use_name %in% target_land_uses_count)
+
+# heat nap for avg count 
+p_heat_count <- ggplot(heatmap_data_count,
+                       aes(x = factor(Year),
+                           y = reorder(land_use_name, 
+                                       total_fires),
+                           fill = total_fires)) +
+  geom_tile(colour = "white", 
+            linewidth = 0.5) +
+  geom_text(aes(label = round(total_fires, 1)), 
+            size = 3, 
+            colour = "white", 
+            fontface = "bold") +
+  scale_fill_viridis_c(option = "cividis", 
+                       labels = comma) +
+  labs(title = "Total fire count by land use", 
+       x = "Year", 
+       y = NULL, 
+       fill = "Total fires") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid = element_blank(), 
+        plot.title = element_text(face = "bold"))
+
+# Heatmap: avg FRP
+p_heat_frp <- ggplot(heatmap_data_frp,
+                     aes(x = factor(Year),
+                         y = reorder(land_use_name, 
+                                     max_frp),
+                         fill = max_frp)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_text(aes(label = round(max_frp, 1)), 
+            size = 3, 
+            colour = "white", 
+            fontface = "bold") +
+  scale_fill_viridis_c(option = "cividis") +
+  labs(title = "Max FRP by land use", 
+       x = "Year", 
+       y = NULL, 
+       fill = "FRP (MW)") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid = element_blank(), 
+        plot.title = element_text(face = "bold"))
+
+# Bar chart: avg FRP collapsed across years 
+p_frp_bar <- zonal_df %>%
+  group_by(land_use_name) %>%
+  summarize(max_frp = mean(max_frp, na.rm = TRUE), .groups = "drop") %>%
+  filter(land_use_name %in% target_land_uses_frp) %>%
+  ggplot(aes(
+    x = reorder(land_use_name, max_frp),
+    y = max_frp,
+    fill = max_frp
+  )) +
+  geom_col(show.legend = FALSE, alpha = 0.9) +
+  geom_text(aes(label = round(max_frp, 1)), hjust = -0.1, size = 3.5) +
+  scale_fill_distiller(palette = "YlOrRd") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  coord_flip() +
+  labs(title = "Max FRP by land use (2019–2025)", x = NULL, y = "Max FRP (MW)") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank(),
+        plot.title = element_text(face = "bold"))
+
+# Line chart: FRP trends over years
+p_line_frp <- ggplot(heatmap_data_frp,
+                     aes(x = Year, y = max_frp, colour = land_use_name)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_fill_viridis_c(option = "cividis") +
+  scale_x_continuous(breaks = 2019:2025) +
+  labs(
+    title = "FRP trends by land use (2019–2025)",
+    x = "Year",
+    y = "Max FRP (MW)",
+    colour = "Land use"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+# Line chart: fire count trends over years
+p_line_count <- ggplot(heatmap_data_count,
+                       aes(x = Year, y = total_fires, colour = land_use_name)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+ scale_fill_viridis_c(option = "cividis") +
+  scale_x_continuous(breaks = 2019:2025) +
+  labs(
+    title = "Fire count trends by land use (2019–2025)",
+    x = "Year",
+    y = "Total fire count",
+    colour = "Land use"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+
+print(p_heat_count)
+print(p_heat_frp)
+print(p_frp_bar)
+print(p_line_frp)
+print(p_line_count)
+
+ggsave("p_heat_count.png", p_heat_count, 
+       width = 14, height = 8, dpi = 150,
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
+ggsave("p_heat_frp.png", p_heat_frp, 
+       width = 14, height = 8, dpi = 150,
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
 ```
 
-Create raster stack for months for fire data
+#### Yearly raster analysis by province and year
+
+```{r}
+#aggregate raster fire data to province level 
+#extract sum of fire count per province polygon
+province_count <- extract(fire_count_stack, vect(provinces),
+                          fun = "sum", na.rm = TRUE) %>% 
+  as_tibble() %>% # create tibble
+  mutate(adm1_name = provinces$adm1_name) %>%
+  pivot_longer(-adm1_name, 
+               names_to = "Year", 
+               values_to = "total_fires") %>%
+  mutate(Year = as.integer(str_extract(Year, "\\d{4}"))) #extract the year from the raster name
+
+#extract max frp per province polygon
+province_frp <- extract(fire_frp_stack, vect(provinces),
+                        fun = "max", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm1_name = provinces$adm1_name) %>%
+  pivot_longer(-adm1_name, 
+               names_to = "Year", 
+               values_to = "max_frp") %>%
+  mutate(Year = as.integer(str_extract(Year, "\\d{4}")))
+
+#join with province polygons
+province_map <- provinces %>%
+  left_join(province_count, by = "adm1_name") %>%
+  left_join(province_frp,   by = c("adm1_name", "Year")) %>% 
+  filter(!is.na(total_fires), !is.na(max_frp))
+
+#create new tibble with total fires and max frp grouped by provinces
+province_map_total <- province_map %>%
+  group_by(adm1_name) %>%
+  summarize(
+    total_fires = sum(total_fires, na.rm = TRUE),
+    max_frp = max(max_frp, na.rm = TRUE)) %>% 
+  filter(!is.na(total_fires), !is.na(max_frp))
+
+# Choropleth map for total fire count
+p_choro_count <- ggplot(province_map_total) +
+  geom_sf(aes(fill = total_fires),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(
+    palette = "YlOrRd",
+    direction = 1,
+    labels = comma,
+    name = "Total fires"
+  ) +
+  labs(title    = "Fire hotspot count by province", subtitle = "Cambodia 2019–2025 (rasterized 300m)") +
+  theme_void(base_size = 12) +
+  theme(plot.title    = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+#chloro map for max frp by province
+p_choro_frp <- ggplot(province_map_total) +
+  geom_sf(aes(fill = max_frp),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(palette = "YlOrRd",
+                       direction = 1,
+                       name = "Max FRP (MW)") +
+  labs(title    = "Fire intensity by province", subtitle = "Cambodia 2019–2025 (rasterized 300m)") +
+  theme_void(base_size = 12) +
+  theme(plot.title    = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+# choropleth map for count by year
+p_choro_c_yearly <- ggplot(province_map %>% filter(!is.na(Year))) +
+  geom_sf(aes(fill = total_fires), colour = "white", linewidth = 0.2) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1,
+                       labels = comma, name = "Total fires") +
+  facet_wrap(~ Year, ncol = 4) +
+  labs(title = "Annual fire count by province in Cambodia") +
+  theme_void(base_size = 11) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+# choropleth map for max frp by year
+p_choro_f_yearly <- ggplot(province_map %>% filter(!is.na(Year))) +
+  geom_sf(aes(fill = max_frp), colour = "white", linewidth = 0.2) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1,
+                       labels = comma, name = "Max FRP") +
+  facet_wrap(~ Year, ncol = 4) +
+  labs(title = "Annual fire intensity by province in Cambodia") +
+  theme_void(base_size = 10) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+print(p_choro_c_yearly)
+print(p_choro_f_yearly)
+print(p_choro_count)
+print(p_choro_frp)
+
+ggsave("choropleth_fire_count.png", p_choro_c_yearly, 
+       width = 14, height = 8, dpi = 150,
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
+ggsave("choropleth_fire_intensity.png", p_choro_f_yearly, 
+       width = 14, height = 8, dpi = 150,
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
+ggsave("choropleth_hotspot_count_all.png", p_choro_count, 
+       width = 14, height = 8, dpi = 150,
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
+ggsave("choropleth_frp_all.png", p_choro_frp, 
+       width = 14, height = 8, dpi = 150, 
+       path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+```
+
+#### Monthly raster stack for months for fire data
 
 ```{r}
 
@@ -718,13 +1291,13 @@ Create raster stack for months for fire data
 # }
 # message("Finished! All years saved to your folder.")
 # 
-# # List only the count files
-# frp_month_files <- list.files(output_dir, 
-#                           pattern = "FRP_Mean_.*\\.tif$", 
-#                           full.names = TRUE)
-# 
-# # Create the stack
-# frp_month_stack <- rast(frp_month_files)
+# List only the count files
+frp_month_files <- list.files(output_dir,
+                          pattern = "FRP_Mean_.*\\.tif$",
+                          full.names = TRUE)
+
+# Create the stack
+frp_month_stack <- rast(frp_month_files)
 print(frp_month_stack)
 
 #check the dimensions of the CRS
@@ -732,13 +1305,107 @@ terra::res(frp_month_stack)
 terra::res(lulc_subset) 
 #note that the resolution for the fire data is about 300m 
 # the LULC data is 30m 
+
+# rename layers to YYYY_MM format
+# Extract year and month from filenames
+file_names <- basename(frp_month_files)
+layer_names <- str_match(file_names, "FRP_Mean_(\\d{4})_(\\d+)\\.tif")
+
+names(frp_month_stack) <- paste0(layer_names[,2], "_", 
+                                  sprintf("%02d", as.integer(layer_names[,3])))
+
+# Verify
+# names(frp_month_stack)  # should be "2019_01", "2019_02" etc.
+
+plot(frp_month_stack[[1]]) # 2019_1
+plot(st_geometry(provinces), 
+     add = TRUE,          
+     border = "black",    # Color of the province lines
+     lwd = 1) 
+plot(frp_month_stack[[73]]) 
+plot(st_geometry(provinces), 
+     add = TRUE,          
+     border = "black",    # Color of the province lines
+     lwd = 1)             # Line width
 ```
 
-Analysis for pixel to pixel comparison
+Analysis for pixel to pixel comparison for monthly trends
+
+Aiming to identify the starting month of each year that surpasses the threshold. The threshold is defined by when the max frp exceeds the 25th quantile.
 
 ```{r}
+# Zonal stats per month per province
+monthly_results <- list()
+#for loop to extract max frp per polygon per month for each raster
+for (i in 1:nlyr(frp_month_stack)) {
+  #get layer name 
+  layer_name <- names(frp_month_stack)[i]
+  yr  <- as.integer(substr(layer_name, 1, 4))
+  mn  <- as.integer(substr(layer_name, 6, 7))
+  # extract year and month from the layer name
+  extracted <- extract(frp_month_stack[[i]], vect(provinces),
+                       fun = "max", na.rm = TRUE) %>%
+    #extract max frp per province polygon for the month
+    as_tibble() %>%
+    select(1,2) %>% 
+    # add province name 
+    mutate(adm1_name = provinces$adm1_name,
+           Year      = yr,
+           Month     = mn)
+  #store result in the list using layer name 
+  monthly_results[[layer_name]] <- extracted
+}
 
+#combine all months and years into one dataframe
+monthly_df <- bind_rows(monthly_results) 
+ # %>%
+ #  rename(max_frp = 2) %>% #rename column 2 to max frp 
+ #  filter(!is.na(max_frp)) #remove rows with no fire activity
 
+names(monthly_df)[1:2] <- c("ID", "max_frp")
+monthly_df <- monthly_df %>% 
+  select(adm1_name, Year, Month, max_frp) %>%
+  filter(!is.na(max_frp))
+
+head(monthly_df)
+monthly_df %>% count(Year, Month)
+
+# Get top 3 provinces by max FRP from raster data
+top3_provinces <- monthly_df %>%
+  group_by(adm1_name) %>%
+  summarize(max_frp = max(max_frp, na.rm = TRUE)) %>%
+  slice_max(max_frp, n = 3) %>%
+  pull(adm1_name)
+
+print(top3_provinces)
+
+# Define fire season start per year
+# define the threshold 
+threshold <- quantile(monthly_df$max_frp, 0.25, na.rm = TRUE)
+
+# Filter and plot
+season_top3 <- monthly_df %>%
+  filter(adm1_name %in% top3_provinces) %>% 
+  group_by(adm1_name) %>%
+  mutate(threshold = quantile(max_frp, 0.25, na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(max_frp >= threshold)
+
+p_season_top3 <- ggplot(season_top3,
+                        aes(x = Month, y = max_frp, colour = factor(Year))) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  scale_colour_viridis_d(option = "inferno", begin = 0.1, end = 0.9) +
+  facet_wrap(~ adm1_name, ncol = 1, scales = "free_y") +
+  labs(title    = "Monthly fire intensity by year — top 3 provinces",
+       subtitle = "Max FRP per month (rasterized 300m)",
+       x = NULL, y = "Max FRP (MW)", colour = "Year") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold"))
+
+print(p_season_top3)
 ```
 
 Add Raster for human modification and population
