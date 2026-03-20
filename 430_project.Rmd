@@ -132,6 +132,11 @@ library(terra) #handle raster data (faster)
 library(nngeo) # k-nearest neighbor join for spatial data 
 library(patchwork) # combine plots into one exportable image
 library(stringr) # simple, consistent wrappers for common string operations
+library(kableExtra) # pretty tables
+library(broom) # convert statistical objects into tidy tables
+library(GWmodel) # geographic weighted regression model
+library(plm) # panel regression
+
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
@@ -442,7 +447,7 @@ plot(st_geometry(provinces),
      border = "black",    # Color of the province lines
      lwd = 1) 
 plot(lulc_stack[[10]]) #2023
-plot(st_geometry(provinces), 
+plot(st_geometry(communes), 
      add = TRUE,          
      border = "black",    # Color of the province lines
      lwd = 1)             # Line width
@@ -559,7 +564,7 @@ sum(is.na(fires_lu_stats$adm1_name))  # should be 0
 # Calculate the top 5 provinces  with highest fire count per land use type
 top5_per_landuse <- fires_lu_stats %>%
   st_drop_geometry() %>%    
-  group_by(land_use_name, adm1_name, Year) %>%
+  group_by(land_use_name, adm1_name) %>%
   summarize(
     total_fires = n(),
     avg_frp     = mean(FRP, na.rm = TRUE),
@@ -659,18 +664,184 @@ for (yr in years) {
       plot.subtitle      = element_text(colour = "grey50")
     )
   print(p)
+  ggsave(paste0("landuse_summary_total", yr, ".png"), p,
+     width = 10, height = 6, dpi = 150)
 }
 
 # Save each chart with year in filename
 # ggsave(paste0("landuse_summary_", yr, ".png"), p,
 #         width = 10, height = 6, dpi = 150)
+
+## create a summary for each year and plot it in a bar chart to compare frp per landu use type 
+# Loop through each year
+years <- 2019:2023
+
+for (yr in years) {
+  # Summarize for this year
+  land_use_summary_yr <- fires_lu_stats %>%
+    st_drop_geometry() %>%
+    filter(Year == yr,
+           land_use_name %in% unique(top5_per_landuse$land_use_name)) %>%
+    group_by(land_use_name) %>%
+    summarize(
+      total_fires = n(),
+      max_frp     = max(FRP, na.rm = TRUE),
+      avg_frp     = mean(FRP, na.rm = TRUE),
+      median_frp  = median(FRP, na.rm = TRUE),
+      sd_frp      = sd(FRP, na.rm = TRUE),
+      .groups     = "drop"
+    ) %>%
+    arrange(desc(max_frp))
+  
+  # chart
+  p <- ggplot(land_use_summary_yr,
+              aes(x = reorder(land_use_name, max_frp),
+                  y = max_frp,
+                  fill = land_use_name)) +
+    geom_col(show.legend = FALSE, alpha = 0.9) +
+    geom_text(aes(label = comma(max_frp)),
+              hjust = -0.1, size = 3.5, fontface = "bold") +
+    scale_y_continuous(labels = comma,
+                       expand = expansion(mult = c(0, 0.15))) +
+    scale_fill_viridis_d(option = "inferno", begin = 0.1, end = 0.9) +
+    coord_flip() +
+    labs(
+      title    = "Fire Intensity by Land Use Type",
+      subtitle = paste("Cambodia", yr),
+      x        = NULL,
+      y        = "Max FRP (MW)"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      plot.title         = element_text(face = "bold"),
+      plot.subtitle      = element_text(colour = "grey50")
+    )
+  print(p)
+  ggsave(paste0("landuse_summary_max", yr, ".png"), p,
+     width = 10, height = 6, dpi = 150)
+}
+
+
+# calculate the percentage change for each province year to year per land use
+pct_change_table <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  filter(land_use_name %in% unique(top5_per_landuse$land_use_name)) %>%
+  group_by(land_use_name, Year) %>%
+  summarize(
+    total_fires = n(),
+    max_frp = max(FRP, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(land_use_name, Year) %>%
+  group_by(land_use_name) %>%
+  mutate(
+    # Percent change from previous year
+    pct_change_count = (total_fires - lag(total_fires)) / lag(total_fires) * 100,
+    pct_change_frp   = (max_frp - lag(max_frp)) / lag(max_frp) * 100
+  ) %>%
+  ungroup() %>%
+  mutate(across(c(pct_change_count, pct_change_frp), ~ round(., 1)))
+
+# Print
+print(pct_change_table)
+
+# Formatted table
+pct_change_table %>%
+  mutate(
+    pct_change_count = ifelse(is.na(pct_change_count), "—", paste0(pct_change_count, "%")),
+    pct_change_frp   = ifelse(is.na(pct_change_frp), "—", paste0(pct_change_frp, "%"))
+  ) %>%
+  kable(
+    col.names = c(
+      "Land use",
+      "Year",
+      "Total fires",
+      "Max FRP (MW)",
+      "% change (count)",
+      "% change (FRP)"
+    ),
+    caption   = "Year-on-year percent change in fire count and intensity by land use"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  collapse_rows(columns = 1)
+
+
+# Calculate percent change year to year for top 5 land uses by fire count per year
+pct_change_bar <- fires_lu_stats %>%
+  st_drop_geometry() %>%
+  group_by(land_use_name, Year) %>%
+  summarize(total_fires = n(), max_frp = max(FRP, na.rm = TRUE), .groups = "drop") %>%
+  # Get top 5 land uses per year by fire count
+  group_by(Year) %>%
+  slice_max(total_fires, n = 5) %>%
+  ungroup() %>%
+  arrange(land_use_name, Year) %>%
+  group_by(land_use_name) %>%
+  mutate(
+    pct_change_count = (total_fires - lag(total_fires)) / lag(total_fires) * 100,
+    pct_change_frp   = (max_frp - lag(max_frp)) / lag(max_frp) * 100
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(pct_change_count))
+
+# Bar chart: percent change in fire count
+p_pct_count <- ggplot(pct_change_bar,
+                      aes(x = reorder(land_use_name, pct_change_count),
+                          y = pct_change_count,
+                          fill = pct_change_count > 0)) +
+  geom_col(alpha = 0.9) +
+  geom_text(aes(label = paste0(round(pct_change_count, 1), "%")),
+            hjust = ifelse(pct_change_bar$pct_change_count > 0, -0.1, 1.1),
+            size = 3) +
+  scale_fill_manual(values = c("TRUE" = "#d73027", "FALSE" = "#4575b4"),
+                    labels = c("TRUE" = "Increase", "FALSE" = "Decrease"),
+                    name   = NULL) +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15))) +
+  coord_flip() +
+  facet_wrap(~ Year, ncol = 2) +
+  labs(title    = "Year-on-year % change in fire count by land use",
+       subtitle = "Top 5 land uses per year — Cambodia 2019–2023",
+       x = NULL, y = "% change") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title  = element_text(face = "bold"),
+        strip.text  = element_text(face = "bold"),
+        legend.position = "bottom")
+
+# Bar chart: percent change in max FRP
+p_pct_frp <- ggplot(pct_change_bar,
+                    aes(x = reorder(land_use_name, pct_change_frp),
+                        y = pct_change_frp,
+                        fill = pct_change_frp > 0)) +
+  geom_col(alpha = 0.9) +
+  geom_text(aes(label = paste0(round(pct_change_frp, 1), "%")),
+            hjust = ifelse(pct_change_bar$pct_change_frp > 0, -0.1, 1.1),
+            size = 3) +
+  scale_fill_manual(values = c("TRUE" = "#d73027", "FALSE" = "#4575b4"),
+                    labels = c("TRUE" = "Increase", "FALSE" = "Decrease"),
+                    name   = NULL) +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15))) +
+  coord_flip() +
+  facet_wrap(~ Year, ncol = 2) +
+  labs(title    = "Year-on-year % change in max FRP by land use",
+       subtitle = "Top 5 land uses per year — Cambodia 2019–2023",
+       x = NULL, y = "% change") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title  = element_text(face = "bold"),
+        strip.text  = element_text(face = "bold"),
+        legend.position = "bottom")
+
+print(p_pct_count)
+print(p_pct_frp)
 ```
 
-#### Temporal fire season shift via fire points 
+#### Temporal fire season shift via fire points
 
 -   reindex the year to start from july to june so that the fire season can be considered starting in Dec or earlier
 
 -   only look at the top 3 provinces with mean annual max FRP
+
+-   need to refine the calculation for fire season
 
 ```{r}
 # calculate the top 3 provinces with max frp across the 7 years
@@ -854,12 +1025,11 @@ print(p_breakpoints)
 
 # table for the fire season start, mid, end dates based on the cumulative daily FRP 
 season_breakpoints %>%
-  mutate(across(c(k_start, k_mid, k_end), ~ format(as.Date(
-    . - 1, origin = paste0(fire_year, "-01-01")
-  ), "%b %d"))) %>%
+  mutate(across(c(k_start, k_mid, k_end), 
+                ~ format(as.Date(. - 1, origin = paste0(fire_year - 1, "-01-01")),   "%b %d"))) %>%
   kable(
-    col.names = c("Province", "fire_year", "Start", "Midpoint", "End"),
-    caption = "Fire season breakpoints"
+    col.names = c("Province", "Fire year", "Start", "Midpoint", "End"),
+    caption   = "Fire season breakpoints (Zhang et al. 2014)"
   ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   collapse_rows(columns = 1)
@@ -1149,6 +1319,73 @@ ggsave("p_heat_frp.png", p_heat_frp,
 
 ```
 
+#### Regression analysis 
+
+```{r}
+
+# Relevel land use with reference category
+zonal_df <- zonal_df %>%
+  mutate(land_use_name = relevel(factor(land_use_name), ref = "Evergreen Forest"))
+
+
+# Ordinary least squares: fire count and land use + year
+model_count <- lm(
+  total_fires ~ land_use_name + Year,
+  data = zonal_df %>% filter(land_use_name %in% target_land_uses_count)
+)
+
+
+# ordinary least squares: max frp and land use + year
+model_frp <- lm(
+  max_frp ~ land_use_name + Year,
+  data = zonal_df %>% filter(land_use_name %in% target_land_uses_frp)
+)
+
+# summary(model_count)
+# summary(model_frp)
+
+# Stargazer table
+stargazer(
+  model_count,
+  model_frp,
+  type             = "text",
+  column.labels    = c("Fire count", "Max FRP"),
+  title            = "OLS regression — fire activity by land use controlling for year",
+  dep.var.labels   = c("Total fires", "Max FRP (MW)"),
+  omit             = "Year",
+  # hide year coefficient for cleaner table
+  omit.labels      = "Year FE",
+  # label the omitted variable
+  add.lines        = list(c("Year control", "Yes", "Yes"))
+)
+
+
+# OLS with interaction: fire activity ~ land use * year
+model_count_int <- lm(
+  total_fires ~ land_use_name * Year,
+  data = zonal_df %>% filter(land_use_name %in% target_land_uses_count)
+)
+
+model_frp_int <- lm(max_frp ~ land_use_name * Year,
+                    data = zonal_df %>% filter(land_use_name %in% target_land_uses_frp))
+
+# summary(model_count_int)
+# summary(model_frp_int)
+
+stargazer(
+  model_count,
+  model_count_int,
+  model_frp,
+  model_frp_int,
+  type          = "text",
+  column.labels = c("Count", "Count × Year", "FRP", "FRP × Year"),
+  title         = "OLS regression — fire activity by land use over time",
+  add.lines     = list(c(
+    "Year interaction", "No", "Yes", "No", "Yes"
+  ))
+)
+```
+
 #### Yearly raster analysis by province and year
 
 ```{r}
@@ -1258,6 +1495,9 @@ ggsave("choropleth_hotspot_count_all.png", p_choro_count,
 ggsave("choropleth_frp_all.png", p_choro_frp, 
        width = 14, height = 8, dpi = 150, 
        path = "C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results")
+
+
+
 ```
 
 #### Monthly raster stack for months for fire data
@@ -1421,6 +1661,280 @@ Pop_stack <- rast(raster_files_pop)
 #rename the files 
 names(Pop_stack) <- c("HM_2016","Pop_count")
 
-print(Pop_stack)
+# Separate HFI and population
+HFI_raster <- Pop_stack[["HM_2016"]]
+Pop_raster  <- Pop_stack[["Pop_count"]]
 
+# Check
+print(HFI_raster)
+plot(HFI_raster)
+
+```
+
+#### HFI analysis with fire data
+
+```{r}
+# Reproject HFI to match fire raster CRS 
+HFI_raster <- project(HFI_raster, crs(fire_frp_stack))
+
+# Aggregate fire rasters from 300m to 1km to match HFI
+fire_frp_1km   <- resample(fire_frp_stack,   HFI_raster, method = "bilinear")
+fire_count_1km <- resample(fire_count_stack, HFI_raster, method = "sum")
+
+# Verify alignment
+compareGeom(fire_frp_1km, HFI_raster)
+
+# Extract HFI and fire values per province
+#fire count 
+province_hfi_count <- extract(fire_count_1km, vect(provinces),
+                               fun = "sum", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm1_name = provinces$adm1_name) %>%
+  pivot_longer(-adm1_name, names_to = "Year", values_to = "total_fires") %>%
+  mutate(Year = as.integer(str_extract(Year, "\\d{4}")))
+#fire frp
+province_hfi_frp <- extract(fire_frp_1km, vect(provinces),
+                             fun = "max", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm1_name = provinces$adm1_name) %>%
+  pivot_longer(-adm1_name, names_to = "Year", values_to = "max_frp") %>%
+  mutate(Year = as.integer(str_extract(Year, "\\d{4}")))
+# hfi raster
+province_hfi_val <- extract(HFI_raster, vect(provinces),
+                             fun = "mean", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm1_name = provinces$adm1_name) %>%
+  rename(mean_hfi = 2)
+
+# Join all together
+province_hfi_sf <- provinces %>%
+  left_join(province_hfi_count %>%
+              group_by(adm1_name) %>%
+              summarize(total_fires = sum(total_fires, na.rm = TRUE),
+                        .groups = "drop"), by = "adm1_name") %>%
+  left_join(province_hfi_frp %>%
+              group_by(adm1_name) %>%
+              summarize(max_frp = max(max_frp, na.rm = TRUE),
+                        .groups = "drop"), by = "adm1_name") %>%
+  left_join(province_hfi_val, by = "adm1_name") %>%
+  filter(!is.na(mean_hfi), !is.na(max_frp))
+
+# Spearman correlation 
+cor.test(province_hfi_sf$mean_hfi, province_hfi_sf$max_frp,
+         method = "spearman")
+cor.test(province_hfi_sf$mean_hfi, province_hfi_sf$total_fires,
+         method = "spearman")
+
+# geographic weighted regression using GWmodel
+province_sp_hfi <- as(province_hfi_sf, "Spatial")
+#bandwidth selection for basic GWR; using Akaike information criterion (AIC)
+#total fires ~ HFI
+bw_count    <- bw.gwr(
+  total_fires ~ mean_hfi,
+  data = province_sp_hfi,
+  approach = "AIC",
+  adaptive = TRUE
+)
+gwr_count   <- gwr.basic(
+  total_fires ~ mean_hfi,
+  data = province_sp_hfi,
+  bw = bw_count,
+  adaptive = TRUE
+)
+print(gwr_count)
+
+# max frp ~ HFI
+bw_frp      <- bw.gwr(
+  max_frp ~ mean_hfi,
+  data = province_sp_hfi,
+  approach = "AIC",
+  adaptive = TRUE
+)
+gwr_frp     <- gwr.basic(max_frp ~ mean_hfi,
+                         data = province_sp_hfi,
+                         bw = bw_frp,
+                         adaptive = TRUE)
+print(gwr_frp)
+
+# results
+gwr_count_results <- as.data.frame(gwr_count$SDF) %>%
+  mutate(adm1_name = province_hfi_sf$adm1_name) %>%
+  select(adm1_name, Local_R2, mean_hfi) %>%
+  rename(Local_R2_count = Local_R2, mean_hfi_coef_count = mean_hfi)
+
+gwr_frp_results <- as.data.frame(gwr_frp$SDF) %>%
+  mutate(adm1_name = province_hfi_sf$adm1_name) %>%
+  select(adm1_name, Local_R2, mean_hfi) %>%
+  rename(Local_R2_frp = Local_R2, mean_hfi_coef_frp = mean_hfi)
+
+# join results to the map
+province_hfi_map <- province_hfi_sf %>%
+  left_join(gwr_count_results, by = "adm1_name") %>%
+  left_join(gwr_frp_results, by = "adm1_name")
+
+# HFI choropleth
+p_hfi_choro <- ggplot(province_hfi_map) +
+  geom_sf(aes(fill = mean_hfi),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(palette = "YlOrRd",
+                       direction = 1,
+                       name = "Mean HFI") +
+  labs(title = "Human footprint index by province", subtitle = "Cambodia (WCS/Columbia, 2016)") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+# total fires choropleth
+p_gwr_hfi_count <- ggplot(province_hfi_map) +
+  geom_sf(aes(fill = total_fires),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(
+    palette = "YlOrRd",
+    direction = 1,
+    labels = comma,
+    name = "Total fires"
+  ) +
+  labs(title    = "Total fire count by province", subtitle = "Cambodia 2019–2025 (1km resolution)") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+# GWR Local R² — fire count
+p_gwr_r2_count <- ggplot(province_hfi_map) +
+  geom_sf(aes(fill = Local_R2_count),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(palette = "YlOrRd",
+                       direction = 1,
+                       name = "Local R²") +
+  labs(title    = "GWR local R² — total fires ~ HFI", subtitle = "Cambodia 2019–2025") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+# GWR Local R² — max FRP
+p_gwr_r2_frp <- ggplot(province_hfi_map) +
+  geom_sf(aes(fill = Local_R2_frp),
+          colour = "white",
+          linewidth = 0.3) +
+  scale_fill_distiller(palette = "YlOrRd",
+                       direction = 1,
+                       name = "Local R²") +
+  labs(title    = "GWR local R² — max FRP ~ HFI", subtitle = "Cambodia 2019–2025") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey50"))
+
+# Print all four panels
+p_hfi_choro + p_gwr_hfi_count + p_gwr_r2_count + p_gwr_r2_frp +
+  plot_layout(ncol = 2) +
+  plot_annotation(title = "HFI vs fire activity by province — Cambodia",
+                  theme = theme(plot.title = element_text(face = "bold")))
+
+print(p_hfi_choro)
+print(p_gwr_hfi_count)
+print(p_gwr_r2_count)
+print(p_gwr_r2_frp)
+
+# calculate GWR for one year to see if the resulting R2 differs significantly from the sum total across the 5 years
+# Filter province_map to single year
+province_2020 <- province_map %>%
+  filter(Year == 2020) %>%
+  left_join(province_hfi_val, by = "adm1_name") %>%
+  filter(!is.na(mean_hfi), !is.na(total_fires))
+
+# GWR 
+province_sp_2020 <- as(province_2020, "Spatial")
+
+bw_2020 <- bw.gwr(total_fires ~ mean_hfi, data = province_sp_2020,
+                  approach = "AIC", adaptive = TRUE)
+
+gwr_2020 <- gwr.basic(total_fires ~ mean_hfi, data = province_sp_2020,
+                      bw = bw_2020, adaptive = TRUE)
+
+print(gwr_2020)
+
+
+```
+
+#### GWR for HFI \~ total fires at the commune level
+
+```{r}
+# Extract total fires per commune for 2020 only
+commune_count_2020 <- extract(fire_count_1km[["fire_count_2020"]], vect(communes),
+                               fun = "sum", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm3_name = communes$adm3_name)
+
+# --- Step 2: Extract mean HFI per commune ---
+commune_hfi <- extract(HFI_raster, vect(communes),
+                       fun = "mean", na.rm = TRUE) %>%
+  as_tibble() %>%
+  mutate(adm3_name = communes$adm3_name) %>%
+  rename(mean_hfi = 2)
+
+# --- Step 3: Join ---
+commune_map <- communes %>%
+  left_join(commune_count_2020 %>% rename(total_fires = 2),
+            by = "adm3_name") %>%
+  left_join(commune_hfi, by = "adm3_name") %>%
+  filter(!is.na(mean_hfi), !is.na(total_fires))
+
+# --- Step 4: Spearman correlation ---
+cor.test(commune_map$total_fires, commune_map$mean_hfi, method = "spearman")
+
+# --- Step 5: GWR ---
+commune_sp <- as(commune_map, "Spatial")
+
+bw_commune <- bw.gwr(total_fires ~ mean_hfi, data = commune_sp,
+                     approach = "AIC", adaptive = TRUE)
+
+gwr_commune <- gwr.basic(total_fires ~ mean_hfi, data = commune_sp,
+                         bw = bw_commune, adaptive = TRUE)
+
+print(gwr_commune)
+
+# --- Step 6: Map results ---
+gwr_commune_results <- as.data.frame(gwr_commune$SDF) %>%
+  mutate(adm3_name = commune_map$adm3_name)
+
+commune_gwr_map <- commune_map %>%
+  left_join(gwr_commune_results %>%
+              select(adm3_name, Local_R2, mean_hfi) %>%
+              rename(mean_hfi_coef = mean_hfi),
+            by = "adm3_name")
+
+# --- Step 7: Plots ---
+p_commune_hfi <- ggplot(commune_gwr_map) +
+  geom_sf(aes(fill = mean_hfi), colour = NA) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1, name = "Mean HFI") +
+  labs(title    = "Human footprint index by commune",
+       subtitle = "Cambodia (WCS/Columbia, 2016)") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+p_commune_fires <- ggplot(commune_gwr_map) +
+  geom_sf(aes(fill = total_fires), colour = NA) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1,
+                       labels = comma, name = "Total fires") +
+  labs(title    = "Total fire count by commune",
+       subtitle = "Cambodia 2020") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+p_commune_r2 <- ggplot(commune_gwr_map) +
+  geom_sf(aes(fill = Local_R2), colour = NA) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1, name = "Local R²") +
+  labs(title    = "GWR local R² — total fires ~ HFI",
+       subtitle = "Cambodia commune level 2020") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+
+
+print(p_commune_hfi)
+print(p_commune_fires)
+print(p_commune_r2)
 ```
