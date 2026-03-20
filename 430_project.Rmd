@@ -136,7 +136,7 @@ library(kableExtra) # pretty tables
 library(broom) # convert statistical objects into tidy tables
 library(GWmodel) # geographic weighted regression model
 library(plm) # panel regression
-
+library(tidyterra) # ggplot for rasters
 
 setwd("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project")
 ```
@@ -184,17 +184,17 @@ head(fire_season_counts)
 ```
 
 ```{r}
-#plot the fires for each year
-ggplot() +
-geom_sf(data = all_fires_jan_apr, aes(color = FRP), 
-        size = 0.5, alpha = 0.7) +
-  # grid by year
-  facet_wrap(~ Year, ncol = 4) +  
-  scale_color_viridis_c(option = "inferno", name = "FRP") +
-  theme_void() +
-  labs(title = "VIIRS Fire Hotspots in Cambodia (Jan-Apr)",
-       caption = "Source: FIRMS VIIRS 375m") +
-  coord_sf() # Ensures the map isn't stretched
+# #plot the fires for each year
+# ggplot() +
+# geom_sf(data = all_fires_jan_apr, aes(color = FRP), 
+#         size = 0.5, alpha = 0.7) +
+#   # grid by year
+#   facet_wrap(~ Year, ncol = 4) +  
+#   scale_color_viridis_c(option = "inferno", name = "FRP") +
+#   theme_void() +
+#   labs(title = "VIIRS Fire intensity in Cambodia (Jan-Apr)",
+#        caption = "Source: FIRMS VIIRS 375m") +
+#   coord_sf()
 ```
 
 ### Admin boundaries layer: provinces and communes
@@ -255,8 +255,9 @@ if (st_crs(all_fires_jan_apr) != st_crs(provinces)) {
 }
 #repair administrative boundaries to ensure no overlapping boundaries
 provinces <- st_make_valid(provinces)
-# spatial join to ensure that each fire point is attributed to a province where it is located
-fires_in_prov <- st_join(all_fires_jan_apr, provinces)
+
+# spatial join to ensure that each fire point is attributed to a province where it is located and filter out only the high confidence hotspots
+fires_in_prov <- st_join(all_fires_jan_apr%>% filter(CONFIDENCE >= 80), provinces)
 
 # aggregate by year and province 
 # calculate total count, mean FRP, and fire density
@@ -289,9 +290,116 @@ wide_density <- prov_fire_stats %>%
               names_prefix = "Density_", 
               )
 print(wide_density)
+
+# Stacked bar chart: fire density by province per year
+
+# Filter to top 10 provinces by mean density for readability
+top10_provinces <- prov_fire_stats %>%
+  group_by(adm1_name) %>%
+  summarize(mean_density = mean(density, na.rm = TRUE),
+            .groups = "drop") %>%
+  slice_max(mean_density, n = 10) %>%
+  pull(adm1_name)
+
+# Density version
+p_density_bar <- prov_fire_stats %>%
+  filter(adm1_name %in% top10_provinces) %>%
+  ggplot(aes(
+    x = reorder(adm1_name, -density),
+    y = density,
+    fill = factor(Year)
+  )) +
+  geom_col(position = "stack",
+           colour = "white",
+           linewidth = 0.3) +
+  scale_fill_brewer(palette = "Set3") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title    = "Fire hotspot density by province",
+    subtitle = "Top 10 provinces — Jan–Apr fire season",
+    x        = NULL,
+    y        = "Fire density (hotspots / km²)",
+    fill     = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title         = element_text(face = "bold"),
+    plot.subtitle      = element_text(colour = "grey50"),
+    panel.grid.major.x = element_blank(),
+    axis.text.x        = element_text(angle = 45, hjust = 1),
+    legend.position    = "right"
+  )
+
+
+
+# Proportional stacked bar (100%) to compare composition across years
+p_density_pct <- prov_fire_stats %>%
+  filter(adm1_name %in% top10_provinces) %>%
+  ggplot(aes(x = factor(Year), y = density, fill = adm1_name)) +
+  geom_col(position = "fill",
+           colour = "white",
+           linewidth = 0.3) +
+  scale_fill_brewer(palette = "Set3") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title    = "Proportional fire density by province per year",
+    subtitle = "Top 10 provinces — Jan–Apr fire season",
+    x        = "Year",
+    y        = "Proportion of total density",
+    fill     = "Province"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title         = element_text(face = "bold"),
+    plot.subtitle      = element_text(colour = "grey50"),
+    panel.grid.major.x = element_blank(),
+    legend.position    = "right"
+  )
+
+p_count_bar <- prov_fire_stats %>%
+  filter(adm1_name %in% top10_provinces) %>%
+  ggplot(aes(
+    x = reorder(adm1_name, -total_hotspots),
+    y = total_hotspots,
+    fill = factor(Year)
+  )) +
+  geom_col(position = "stack",
+           colour = "white",
+           linewidth = 0.3) +
+  scale_fill_brewer(palette = "Set3") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title    = "Fire hotspot count by province",
+    subtitle = "Top 10 provinces — Jan–Apr fire season",
+    x        = NULL,
+    y        = "Total hotspots",
+    fill     = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title         = element_text(face = "bold"),
+    plot.subtitle      = element_text(colour = "grey50"),
+    panel.grid.major.x = element_blank(),
+    axis.text.x        = element_text(angle = 45, hjust = 1),
+    legend.position    = "right"
+  )
+
+print(p_count_bar)
+print(p_density_bar)
+print(p_density_pct)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/Provincial_fire_count_stacked.png",
+       plot   = p_count_bar,
+       width  = 10, height = 6, dpi = 150)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/Provincial_fire_density-stacked.png", p_density_bar, 
+       width = 10, height = 6, dpi = 150)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/Provincial_fire_density-propor.png", p_density_pct, 
+       width = 10, height = 6, dpi = 150)
 ```
 
-Visualise the fire statistics for provinces
+#### Visualise the fire statistics for provinces
 
 *note that hotspot data has not filtered out any low FRP, minimal brightness or for confidence level*
 
@@ -450,7 +558,117 @@ plot(lulc_stack[[10]]) #2023
 plot(st_geometry(communes), 
      add = TRUE,          
      border = "black",    # Color of the province lines
-     lwd = 1)             # Line width
+     lwd = 0.5)             # Line width
+
+# Define LULC colour palette (one colour per class)
+lulc_colours <- c(
+  "1"  = "#1a6b8a",
+  # Aquaculture   — deep blue
+  "2"  = "#d4b483",
+  # Barren        — tan
+  "3"  = "#f5e642",
+  # Cropland      — yellow
+  "4"  = "#c8b400",
+  # Crop plantation — dark yellow
+  "5"  = "#a8d45a",
+  # Deciduous forest — light green
+  "6"  = "#2d6a4f",
+  # Evergreen forest — dark green
+  "7"  = "#52b788",
+  # Flooded forest — teal green
+  "8"  = "#74c69d",
+  # Forest plantation — medium green
+  "9"  = "#d8f3dc",
+  # Grassland     — pale green
+  "10" = "#1b4332",
+  # Mangrove      — very dark green
+  "11" = "#40916c",
+  # Other forest  — mid green
+  "12" = "#e9c46a",
+  # Palm          — amber
+  "13" = "#f4d35e",
+  # Rice          — pale yellow
+  "14" = "#e76f51",
+  # Rubber        — coral
+  "15" = "#b5c99a",
+  # Shrub         — sage
+  "16" = "#d62828",
+  # Urban         — red
+  "17" = "#48cae4",
+  # Water         — light blue
+  "18" = "#0077b6",
+  # Wetland       — blue
+  "19" = "#f77f00",
+  # Sugarcane     — orange
+  "20" = "#9b2226",
+  # Cassava       — dark red
+  "21" = "#ffffff",
+  # Snow          — white
+  "22" = "#adb5bd"   # Other         — grey
+)
+
+lulc_labels <- c(
+  "1"  = "Aquaculture",
+  "2"  = "Barren",
+  "3"  = "Cropland",
+  "4"  = "Crop plantation",
+  "5"  = "Deciduous forest",
+  "6"  = "Evergreen forest",
+  "7"  = "Flooded forest",
+  "8"  = "Forest plantation",
+  "9"  = "Grassland",
+  "10" = "Mangrove",
+  "11" = "Other forest",
+  "12" = "Palm",
+  "13" = "Rice",
+  "14" = "Rubber",
+  "15" = "Shrub",
+  "16" = "Urban",
+  "17" = "Water",
+  "18" = "Wetland",
+  "19" = "Sugarcane",
+  "20" = "Cassava",
+  "21" = "Snow",
+  "22" = "Other"
+)
+
+# Convert LULC 2023 raster to factor
+lulc_2023 <- lulc_stack[["LULC_2023"]]
+lulc_2023 <- as.factor(lulc_2023)
+
+# Plot with tidyterra
+p_lulc_map <- ggplot() +
+  geom_spatraster(data = lulc_2023) +
+  scale_fill_manual(
+    values  = lulc_colours,
+    labels  = lulc_labels,
+    name    = "Land use",
+    na.value = "transparent"
+  ) +
+  geom_sf(
+    data    = provinces,
+    fill    = NA,
+    colour  = "white",
+    linewidth = 0.4
+  ) +
+  labs(title    = "Land use and land cover in Cambodia 2023",
+       subtitle = "RLCMS SERVIR-SEA (30m resolution)",
+       caption  = "Source: Saah et al. (2020)") +
+  theme_void(base_size = 12) +
+  theme(
+    plot.title      = element_text(face = "bold", size = 14),
+    plot.subtitle   = element_text(colour = "grey50"),
+    plot.caption    = element_text(colour = "grey60", size = 9),
+    legend.position = "right",
+    legend.key.size = unit(0.4, "cm"),
+    legend.text     = element_text(size = 8)
+  )
+
+print(p_lulc_map)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/LULC_2023_map.png",
+       plot = p_lulc_map, width = 12, height = 8, dpi = 200)
+
 ```
 
 ### Analyse the fire and land use statistics (2019-2023)
@@ -833,6 +1051,12 @@ p_pct_frp <- ggplot(pct_change_bar,
 
 print(p_pct_count)
 print(p_pct_frp)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/per_change_count.png", p_pct_count, 
+       width = 10, height = 6, dpi = 150)
+
+ggsave("C:/Users/marin/OneDrive - UBC/2. Coursework/2025 Term 2 - FRE 430/FRE 430/Final_project/Results/per_change_frp.png", p_pct_frp, 
+       width = 10, height = 6, dpi = 150)
 ```
 
 #### Temporal fire season shift via fire points
@@ -1319,7 +1543,7 @@ ggsave("p_heat_frp.png", p_heat_frp,
 
 ```
 
-#### Regression analysis 
+#### Regression analysis
 
 ```{r}
 
@@ -1868,24 +2092,24 @@ commune_count_2020 <- extract(fire_count_1km[["fire_count_2020"]], vect(communes
   as_tibble() %>%
   mutate(adm3_name = communes$adm3_name)
 
-# --- Step 2: Extract mean HFI per commune ---
+# xtract mean HFI per commune
 commune_hfi <- extract(HFI_raster, vect(communes),
                        fun = "mean", na.rm = TRUE) %>%
   as_tibble() %>%
   mutate(adm3_name = communes$adm3_name) %>%
   rename(mean_hfi = 2)
 
-# --- Step 3: Join ---
+# Join 
 commune_map <- communes %>%
   left_join(commune_count_2020 %>% rename(total_fires = 2),
             by = "adm3_name") %>%
   left_join(commune_hfi, by = "adm3_name") %>%
   filter(!is.na(mean_hfi), !is.na(total_fires))
 
-# --- Step 4: Spearman correlation ---
+# Spearman correlation 
 cor.test(commune_map$total_fires, commune_map$mean_hfi, method = "spearman")
 
-# --- Step 5: GWR ---
+# GWR
 commune_sp <- as(commune_map, "Spatial")
 
 bw_commune <- bw.gwr(total_fires ~ mean_hfi, data = commune_sp,
@@ -1896,7 +2120,7 @@ gwr_commune <- gwr.basic(total_fires ~ mean_hfi, data = commune_sp,
 
 print(gwr_commune)
 
-# --- Step 6: Map results ---
+# map results
 gwr_commune_results <- as.data.frame(gwr_commune$SDF) %>%
   mutate(adm3_name = commune_map$adm3_name)
 
@@ -1906,7 +2130,7 @@ commune_gwr_map <- commune_map %>%
               rename(mean_hfi_coef = mean_hfi),
             by = "adm3_name")
 
-# --- Step 7: Plots ---
+# Plots 
 p_commune_hfi <- ggplot(commune_gwr_map) +
   geom_sf(aes(fill = mean_hfi), colour = NA) +
   scale_fill_distiller(palette = "YlOrRd", direction = 1, name = "Mean HFI") +
